@@ -413,30 +413,210 @@ function QuickAddBar({ onRefresh }) {
   );
 }
 
-// ── GitHub commit prompt banner ────────────────────────────────────────────
-function CommitBanner({ onDismiss }) {
-  const [mode, setMode] = useStatePL('prompt');
-  if (mode === 'done') return null;
+// ── Inbox: shared Slack message parser ────────────────────────────────────
+function parseSlackMessages(rawText) {
+  return (rawText || '').split('\n')
+    .map(line => {
+      const m = line.trim().match(/^(.+?)\s*\[(\d+:\d+\s*[AP]M)\]:\s*(.+)$/i);
+      return m ? { name: m[1].trim(), time: m[2].trim(), text: m[3].trim() } : null;
+    })
+    .filter(Boolean);
+}
+
+// ── Inbox: Git commit banner ───────────────────────────────────────────────
+function GitBanner({ item, onDismiss, onRefresh }) {
+  const { LANES, CURRENT_USER } = window.HANDOFF;
+  const firstNode = (item.nodes || [])[0] || {};
+  const meta = firstNode.metadata || {};
+  const [note, setNote] = useStatePL('');
+  const [lane, setLane] = useStatePL(() => {
+    const l = LANES.find(l => l.id === item.branch_slug);
+    return l ? l.id : (LANES[0] ? LANES[0].id : '');
+  });
+  const [saving, setSaving] = useStatePL(false);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    const selectedLane = LANES.find(l => l.id === lane);
+    if (selectedLane) {
+      await API.addNode(selectedLane.dbId, {
+        type: firstNode.type || 'commit',
+        content: firstNode.content || meta.title,
+        created_by: CURRENT_USER,
+        metadata: { ...meta, ...(note.trim() ? { note: note.trim() } : {}) },
+      });
+    }
+    await API.dismissInbox(item.id);
+    setSaving(false);
+    onRefresh();
+    onDismiss(item.id);
+  };
+
+  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); };
+
   return (
-    <div style={{ marginBottom: 14, border: '1px solid #1D9E7566', background: '#1D9E751a', borderRadius: 12, padding: '13px 15px', animation: 'slideUp .2s ease both' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <Icon name="github" size={18} color="var(--teal)" />
-        <span className="mono" style={{ fontSize: 13, color: 'var(--teal)' }}>e4b9f01</span>
-        <span style={{ fontSize: 13, color: '#d6d6dd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Add recognizer beam-search decoder</span>
-        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>pushed 12m ago</span>
-        {mode === 'prompt' && (
-          <div style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
-            <button className="btn" style={{ padding: '5px 11px', fontSize: 12 }} onClick={() => setMode('annotate')}>Add a note</button>
-            <button className="btn btn-ghost" style={{ padding: '5px 9px', fontSize: 12, color: 'var(--muted)' }} onClick={onDismiss}>Skip</button>
-          </div>
-        )}
+    <div style={{ marginBottom: 10, border: '1px solid #1D9E7555', background: '#1D9E751a', borderRadius: 12, padding: '13px 15px', animation: 'slideUp .2s ease both' }}>
+      {/* Commit header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+        <Icon name="github" size={17} color="var(--teal)" />
+        <span className="mono" style={{ fontSize: 13, color: 'var(--teal)', flex: '0 0 auto' }}>{meta.hash}</span>
+        <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>pushed just now</span>
       </div>
-      {mode === 'annotate' && (
-        <div style={{ display: 'flex', gap: 9, marginTop: 11, animation: 'slideUp .15s ease both' }}>
-          <input autoFocus placeholder="What does this commit change?"
-            style={{ flex: 1, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
-          <button className="btn btn-primary" style={{ padding: '7px 13px' }} onClick={() => setMode('done')}>Save</button>
+      {/* Note + lane + actions */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input value={note} onChange={e => setNote(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && save()}
+          placeholder="Add a note about this commit… (optional)"
+          style={{ flex: 1, minWidth: 200, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
+        <select value={lane} onChange={e => setLane(e.target.value)}
+          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
+          {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={skip}>Skip</button>
+        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={saving} onClick={save}>
+          {saving ? 'Saving…' : 'Add to log →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Inbox: Slack message banner ────────────────────────────────────────────
+function SlackBanner({ item, onDismiss, onRefresh }) {
+  const { LANES, CURRENT_USER, TYPE_META } = window.HANDOFF;
+  const [nodes, setNodes] = useStatePL(item.nodes || []);
+  const [lane, setLane] = useStatePL(() => {
+    const l = LANES.find(l => l.id === item.branch_slug);
+    return l ? l.id : (LANES[0] ? LANES[0].id : '');
+  });
+  const [expanded, setExpanded] = useStatePL(false);
+  const [saving, setSaving] = useStatePL(false);
+  const messages = parseSlackMessages(item.raw_text);
+
+  const save = async () => {
+    if (saving || !nodes.length) return;
+    const selectedLane = LANES.find(l => l.id === lane);
+    if (!selectedLane) return;
+    setSaving(true);
+    for (const n of nodes) {
+      await API.addNode(selectedLane.dbId, {
+        type: n.type, content: n.content, created_by: CURRENT_USER,
+        metadata: n.metadata || {}, is_ai_generated: true,
+      });
+    }
+    await API.dismissInbox(item.id);
+    setSaving(false);
+    onRefresh();
+    onDismiss(item.id);
+  };
+
+  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); };
+
+  const dotColors = nodes.map(n => {
+    const ft = n.type === 'idea' ? 'experiment' : n.type === 'link' ? 'reference' : n.type;
+    return (TYPE_META[ft] || TYPE_META.note).color;
+  });
+
+  return (
+    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, overflow: 'hidden', animation: 'slideUp .2s ease both' }}>
+      {/* Always-visible header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 15px', cursor: 'pointer' }}
+        onClick={() => setExpanded(e => !e)}>
+        <Icon name="slack" size={17} color="var(--purple)" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#d6d6dd' }}>Slack messages detected</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{item.title}</div>
         </div>
+        {/* Colored dot preview */}
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: '0 0 auto' }}>
+          {dotColors.map((c, i) => <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />)}
+          <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 4 }}>{nodes.length} items</span>
+        </div>
+        {!expanded && (
+          <button className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 9px', flex: '0 0 auto' }}
+            onClick={e => { e.stopPropagation(); skip(); }}>Skip</button>
+        )}
+        <Icon name="chevDown" size={14} color="var(--muted)"
+          style={{ flex: '0 0 auto', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div style={{ padding: '0 15px 14px', borderTop: '1px solid #7F77DD1a' }}>
+          {/* Slack message log */}
+          <div style={{ background: 'var(--bg)', borderRadius: 9, padding: '11px 12px', margin: '12px 0 13px' }}>
+            {messages.map((m, i) => {
+              const initials = m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+              const hue = (m.name.charCodeAt(0) * 37 + m.name.charCodeAt(m.name.length - 1) * 13) % 360;
+              return (
+                <div key={i} style={{ display: 'flex', gap: 9, marginBottom: i < messages.length - 1 ? 10 : 0 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: `hsl(${hue},35%,22%)`, border: `1px solid hsl(${hue},40%,32%)`, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: `hsl(${hue},55%,65%)` }}>
+                    {initials}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', marginBottom: 2 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6dd' }}>{m.name.split(' ')[0]}</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{m.time}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#b0b0c0', lineHeight: 1.55, wordBreak: 'break-word' }}>{m.text}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Extracted nodes */}
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8 }}>
+            {nodes.length} node{nodes.length !== 1 ? 's' : ''} extracted — remove any you don't need
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 13 }}>
+            {nodes.length === 0
+              ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
+              : nodes.map((n, i) => (
+                  <ParsedNodeCard key={i} node={n} onRemove={() => setNodes(p => p.filter((_, j) => j !== i))} />
+                ))}
+          </div>
+
+          {/* Lane + actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Lane</span>
+            <select value={lane} onChange={e => setLane(e.target.value)}
+              style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none' }}>
+              {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={skip}>Skip all</button>
+            <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={saving || !nodes.length} onClick={save}>
+              {saving ? 'Adding…' : `Add ${nodes.length} entr${nodes.length !== 1 ? 'ies' : 'y'} →`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Inbox section (fetches git + slack suggestions) ────────────────────────
+function InboxSection({ onRefresh }) {
+  const [items, setItems] = useStatePL([]);
+
+  useEffectPL(() => {
+    API.getInbox()
+      .then(data => setItems(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
+  const dismiss = (id) => setItems(prev => prev.filter(item => item.id !== id));
+  if (!items.length) return null;
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      {items.map(item =>
+        item.source === 'git'
+          ? <GitBanner key={item.id} item={item} onDismiss={dismiss} onRefresh={onRefresh} />
+          : <SlackBanner key={item.id} item={item} onDismiss={dismiss} onRefresh={onRefresh} />
       )}
     </div>
   );
@@ -571,7 +751,6 @@ function DigestModal({ currentUser, onClose }) {
 function PersonalLogScreen({ currentUser, onRefresh }) {
   const { ENTRIES, PEOPLE } = window.HANDOFF;
   const me = PEOPLE[currentUser];
-  const [showBanner, setShowBanner] = useStatePL(true);
   const [digest, setDigest] = useStatePL(false);
   const mine = ENTRIES.filter(e => e.author === currentUser)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -597,13 +776,14 @@ function PersonalLogScreen({ currentUser, onRefresh }) {
       {/* Feed */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 0' }}>
         <div style={{ width: 680, maxWidth: '92%', margin: '0 auto' }}>
-          {/* AI free log (paste anything) */}
-          <FreeLogSection onRefresh={onRefresh} />
+          {/* Inbox: git commits + Slack message suggestions */}
+          <InboxSection onRefresh={onRefresh} />
 
           {/* Quick single-entry add */}
           <QuickAddBar onRefresh={onRefresh} />
 
-          {showBanner && <CommitBanner onDismiss={() => setShowBanner(false)} />}
+          {/* AI free log (paste anything) */}
+          <FreeLogSection onRefresh={onRefresh} />
 
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted)', margin: '10px 2px 12px' }}>My entries</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>

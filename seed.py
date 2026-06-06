@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from models import db, Project, User, Branch, Node, Contact
+from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion
 
 
 def dt(s):
@@ -323,6 +323,93 @@ def seed_if_empty():
 
     for n in nodes:
         db.session.add(n)
+    db.session.flush()  # assign IDs so we can reference them in NodeLinks
+
+    # ── Look up key nodes for decision linking ─────────────────────────────
+    def _find(branch, ntype, keyword):
+        for n in nodes:
+            if n.branch_id == branch.id and n.type == ntype and keyword.lower() in n.content.lower():
+                return n
+        return None
+
+    commit_backbone  = _find(ocr,   'commit', 'EfficientNet')       # a3f9c2d
+    idea_backbone    = _find(ocr,   'idea',   'EfficientNet-B3')    # 87.2%
+    idea_tta         = _find(ocr,   'idea',   'TTA not yet')        # pending
+    commit_fp16      = _find(train, 'commit', 'mixed-precision')    # c0d9e22
+    idea_fp16        = _find(train, 'idea',   'fp16 cut')           # -38%
+    idea_cosine      = _find(train, 'idea',   'Cosine schedule')    # 86.0%
+    note_nfkc        = _find(data,  'note',   'NFKC')              # dropped NFKC
+    commit_synthtext = _find(data,  'commit', 'synthetic text')     # b2c7e90
+    idea_synthtext   = _find(data,  'idea',   'Synthetic aug')      # +2.1%
+    commit_initial   = _find(ocr,   'commit', 'skeleton')           # 7c1e4b0
+
+    # ── Decision nodes ─────────────────────────────────────────────────────
+    dec_backbone = node(ocr, 'jensen', '2026-05-22T08:00:00', 'decision',
+        'Switch detector backbone from ResNet50 to EfficientNet-B3',
+        title='Switch detector backbone from ResNet50 to EfficientNet-B3',
+        body='ResNet50 was showing instability on edge-case receipts (torn corners, low contrast). '
+             'EfficientNet-B3 is ~20% lighter and more stable on our hard subset.',
+        rationale='EfficientNet-B3 more stable on edge receipts and 20% lighter — better trade-off for our target hardware.',
+        alternatives='MobileNetV3 (too small), ViT-Tiny (too slow to fine-tune), keep ResNet50',
+        note='Backbone swap: ResNet50 → EfficientNet-B3.')
+
+    dec_fp16 = node(train, 'jensen', '2026-05-11T08:00:00', 'decision',
+        'Enable mixed-precision fp16 training via AMP',
+        title='Enable mixed-precision fp16 training via AMP',
+        body='fp16 cuts epoch time by ~38% with no measurable accuracy loss. '
+             'Critical for iteration speed given we are running ablations daily.',
+        rationale='38% wall-time reduction with no accuracy loss — essential for daily ablation cadence.',
+        alternatives='Full fp32 training (baseline), bfloat16 (not supported on V100)',
+        note='fp16 AMP enabled — 38% faster, no accuracy hit.')
+
+    dec_cosine = node(train, 'jensen', '2026-05-25T09:00:00', 'decision',
+        'Use cosine annealing LR schedule instead of step decay',
+        title='Use cosine annealing LR schedule instead of step decay',
+        body='Ablation showed cosine 85.2 → 86.0% vs step decay. '
+             'Cosine also avoids the sensitivity of picking the right step epochs.',
+        rationale='+0.8% char-F1 over step decay in ablation. Simpler to configure, no epoch thresholds to tune.',
+        alternatives='Step decay (drop ×0.1 at fixed epochs), OneCycleLR, constant LR with warmup only',
+        note='Cosine LR adopted — +0.8% and easier to configure.')
+
+    dec_nfkc = node(data, 'maya', '2026-05-16T10:00:00', 'decision',
+        'Disable NFKC normalization for CJK locales',
+        title='Disable NFKC normalization for CJK locales',
+        body='NFKC normalization was collapsing full-width CJK punctuation (e.g. ！→!) '
+             'into ASCII equivalents, causing accuracy regression on CJK vendor receipts.',
+        rationale='NFKC broke CJK full-width chars — accuracy regression was immediately visible in eval.',
+        alternatives='Selective NFKC (ASCII range only), apply NFKC then restore full-width with lookup',
+        note='NFKC disabled for CJK — full-width punctuation preserved.')
+
+    dec_synthtext = node(data, 'maya', '2026-05-09T10:00:00', 'decision',
+        'Use SynthText for rare-glyph augmentation instead of manual curation',
+        title='Use SynthText for rare-glyph augmentation instead of manual curation',
+        body='Rare glyphs are underrepresented in the real receipt dataset. '
+             'SynthText can generate arbitrarily many synthetic samples targeting specific character sets.',
+        rationale='Manual curation would take weeks; SynthText generates 50k targeted samples overnight.',
+        alternatives='Manual data collection, CycleGAN-based style transfer, skip rare-glyph aug',
+        note='SynthText chosen for rare-glyph coverage — scale over manual effort.')
+
+    for d in [dec_backbone, dec_fp16, dec_cosine, dec_nfkc, dec_synthtext]:
+        db.session.add(d)
+    db.session.flush()  # assign IDs to decision nodes
+
+    # ── Pre-seeded NodeLinks (confirmed, non-AI) ───────────────────────────
+    def link(from_node, to_node, rel):
+        if from_node and to_node:
+            db.session.add(NodeLink(
+                from_id=from_node.id, to_id=to_node.id,
+                rel=rel, is_ai=False, status='confirmed',
+                description='',
+            ))
+
+    link(dec_backbone,  commit_backbone,  'implements')
+    link(dec_backbone,  idea_backbone,    'validates')
+    link(dec_fp16,      commit_fp16,      'implements')
+    link(dec_fp16,      idea_fp16,        'validates')
+    link(dec_cosine,    idea_cosine,      'validates')
+    link(dec_nfkc,      note_nfkc,        'triggered_by')
+    link(dec_synthtext, commit_synthtext,  'implements')
+    link(dec_synthtext, idea_synthtext,   'validates')
 
     # ── Tasks ──────────────────────────────────────────────────────────────
     tasks = [
@@ -379,3 +466,150 @@ def seed_if_empty():
 
     db.session.commit()
     print('Database seeded with OCR scenario.')
+
+
+def seed_inbox_if_empty():
+    if InboxSuggestion.query.count() > 0:
+        return
+
+    items = [
+        # ── Git commit ──────────────────────────────────────────────────────
+        InboxSuggestion(
+            source='git',
+            title='e4b9f01 — Add recognizer beam-search decoder',
+            raw_text='pushed just now to ocr branch',
+            branch_slug='ocr',
+            nodes_json=json.dumps([{
+                'type': 'commit',
+                'content': 'Add recognizer beam-search decoder',
+                'metadata': {
+                    'hash': 'e4b9f01',
+                    'title': 'Add recognizer beam-search decoder',
+                    'body': 'Replaces the greedy CTC decoder with a beam-search decoder (width=10). '
+                            'Improves low-confidence character predictions on smudged receipts.',
+                    'note': 'Beam-search decoder (width=10) replaces greedy CTC — better on noisy inputs.',
+                },
+            }]),
+        ),
+
+        # ── Slack batch 1: #ml-team ─────────────────────────────────────────
+        InboxSuggestion(
+            source='slack',
+            title='#ml-team · 5 messages',
+            branch_slug='data',
+            raw_text=(
+                'Diego Torres [3:47 PM]: finished the DALI stress test — 94k samples/sec on V100, no OOM after 6 hours\n'
+                'Diego Torres [3:48 PM]: full run log: https://wandb.ai/ocr-team/receipts/runs/dali-stress-v3\n'
+                'Maya Chen [3:51 PM]: nice!! also pushed the weight EMA patch, commit 9d1c4fe — ablations showed +0.4% on eval\n'
+                'Diego Torres [3:53 PM]: on the CJK locale issue — we decided to go with ICU tokenizer instead of NFKC, handles full-width chars way better\n'
+                'Jensen Park [3:55 PM]: +1. ref doc: https://unicode.org/reports/tr29/'
+            ),
+            nodes_json=json.dumps([
+                {
+                    'type': 'idea',
+                    'content': 'DALI stress test — 94k samples/sec on V100, stable after 6h',
+                    'metadata': {
+                        'title': 'DALI stress test — 94k samples/sec on V100, stable after 6h',
+                        'metric': '94k samples/sec',
+                        'body': 'Input pipeline benchmarked at 94k samples/sec on V100. No OOM observed after a 6-hour stress run. Bottleneck has been eliminated.',
+                        'note': 'DALI pipeline no longer a bottleneck — stable over 6h stress run.',
+                    },
+                },
+                {
+                    'type': 'link',
+                    'content': 'https://wandb.ai/ocr-team/receipts/runs/dali-stress-v3',
+                    'metadata': {
+                        'title': 'W&B — DALI stress test v3',
+                        'refKind': 'Docs',
+                        'note': 'Full DALI stress test report.',
+                    },
+                },
+                {
+                    'type': 'commit',
+                    'content': 'Add weight EMA to model checkpointing',
+                    'metadata': {
+                        'hash': '9d1c4fe',
+                        'title': 'Add weight EMA to model checkpointing',
+                        'body': 'Exponential moving average of weights added to the checkpoint callback. Ablation shows +0.4% on eval — confirmed across 3 seeds.',
+                        'note': '+0.4% on eval — EMA weights confirmed by ablation.',
+                    },
+                },
+                {
+                    'type': 'decision',
+                    'content': 'Use ICU tokenizer for CJK locale instead of NFKC',
+                    'metadata': {
+                        'title': 'Use ICU tokenizer for CJK locale instead of NFKC',
+                        'rationale': 'NFKC normalization was collapsing full-width punctuation incorrectly. ICU boundary rules handle CJK full-width chars correctly.',
+                        'alternatives': 'NFKC normalization (broken for full-width chars)',
+                        'note': 'CJK locale fix — ICU tokenizer over NFKC.',
+                    },
+                },
+                {
+                    'type': 'link',
+                    'content': 'https://unicode.org/reports/tr29/',
+                    'metadata': {
+                        'title': 'Unicode TR29 — Unicode Text Segmentation',
+                        'refKind': 'Docs',
+                        'note': 'Word boundary rules used by the ICU tokenizer we adopted.',
+                    },
+                },
+            ]),
+        ),
+
+        # ── Slack batch 2: #ml-standup ──────────────────────────────────────
+        InboxSuggestion(
+            source='slack',
+            title='#ml-standup · 5 messages',
+            branch_slug='ocr',
+            raw_text=(
+                'Priya Rao [9:04 AM]: standup — any update on TTA evaluation? Jensen you said it was WIP last week\n'
+                'Jensen Park [9:06 AM]: running it now — prelim with 3-scale + flip TTA looks like +1.4% char-F1, still need the full sweep\n'
+                'Jensen Park [9:07 AM]: prelim log here: https://wandb.ai/ocr-team/receipts/runs/tta-prelim-01\n'
+                'Maya Chen [9:09 AM]: found a useful reference for scale selection: https://arxiv.org/abs/2009.12666\n'
+                'Maya Chen [9:10 AM]: section 3.2 covers scale ratios for document OCR specifically — worth a read before finalizing the sweep'
+            ),
+            nodes_json=json.dumps([
+                {
+                    'type': 'idea',
+                    'content': 'TTA preliminary — +1.4% char-F1 with 3-scale flip augmentation',
+                    'metadata': {
+                        'title': 'TTA preliminary — +1.4% char-F1 with 3-scale flip augmentation',
+                        'metric': '+1.4% char-F1',
+                        'body': 'Preliminary TTA result using 3-scale + horizontal flip. Full sweep (more scales, elastic) still in progress.',
+                        'note': 'TTA prelim: +1.4% char-F1 — full sweep still running.',
+                    },
+                },
+                {
+                    'type': 'link',
+                    'content': 'https://wandb.ai/ocr-team/receipts/runs/tta-prelim-01',
+                    'metadata': {
+                        'title': 'W&B — TTA preliminary run 01',
+                        'refKind': 'Docs',
+                        'note': 'Preliminary TTA run log.',
+                    },
+                },
+                {
+                    'type': 'link',
+                    'content': 'https://arxiv.org/abs/2009.12666',
+                    'metadata': {
+                        'title': 'Revisiting Data Augmentation for Document Understanding (arXiv 2009.12666)',
+                        'refKind': 'Paper',
+                        'note': 'Sec 3.2 covers scale ratio selection for document OCR TTA.',
+                    },
+                },
+                {
+                    'type': 'note',
+                    'content': 'Section 3.2 of TTA paper has analysis of scale ratios for document OCR — read before finalizing sweep',
+                    'metadata': {
+                        'title': 'TTA scale ratios — read section 3.2 before finalizing sweep',
+                        'note': 'Action item from Maya in standup.',
+                    },
+                },
+            ]),
+        ),
+    ]
+
+    for item in items:
+        db.session.add(item)
+    db.session.commit()
+    print('Inbox seeded with git + Slack suggestions.')

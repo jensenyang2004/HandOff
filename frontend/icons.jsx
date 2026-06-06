@@ -29,6 +29,7 @@ const Icon = ({ name, size = 16, color = 'currentColor', strokeWidth = 1.6, styl
     case 'decision':  return <svg {...p}><path d="M12 2l10 10-10 10L2 12z"/></svg>;
     case 'meeting':   return <svg {...p}><circle cx="8" cy="7" r="3"/><path d="M3 20c0-3.3 2.2-6 5-6h1"/><circle cx="16" cy="7" r="3"/><path d="M21 20c0-3.3-2.2-6-5-6h-1"/></svg>;
     case 'milestone': return <svg {...p}><line x1="5" y1="3" x2="5" y2="21"/><path d="M5 4l12 5-12 5"/></svg>;
+    case 'slack':     return <svg {...p}><path d="M9 4v8"/><path d="M15 12v8"/><path d="M4 9h8"/><path d="M12 15h8"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="6.5" r="2"/></svg>;
     default: return null;
   }
 };

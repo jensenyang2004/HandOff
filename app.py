@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from models import db, Project, User, Branch, Node, Contact, NodeLink
+from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion
 from ai_service import AIService
 
 load_dotenv()
@@ -36,7 +36,12 @@ def create_app():
         inspector = sa_inspect(db.engine)
         existing = [c['name'] for c in inspector.get_columns('branch')]
         existing_proj = [c['name'] for c in inspector.get_columns('project')]
+        existing_nl = [c['name'] for c in inspector.get_columns('node_link')]
         with db.engine.connect() as conn:
+            if 'status' not in existing_nl:
+                conn.execute(text("ALTER TABLE node_link ADD COLUMN status VARCHAR(20) DEFAULT 'confirmed'"))
+            if 'description' not in existing_nl:
+                conn.execute(text("ALTER TABLE node_link ADD COLUMN description TEXT DEFAULT ''"))
             if 'ai_context' not in existing:
                 conn.execute(text("ALTER TABLE branch ADD COLUMN ai_context TEXT DEFAULT ''"))
             if 'ai_context_updated_at' not in existing:
@@ -48,8 +53,9 @@ def create_app():
             if 'last_linked_at' not in existing_proj:
                 conn.execute(text("ALTER TABLE project ADD COLUMN last_linked_at DATETIME"))
             conn.commit()
-        from seed import seed_if_empty
+        from seed import seed_if_empty, seed_inbox_if_empty
         seed_if_empty()
+        seed_inbox_if_empty()
 
     # ── Frontend ────────────────────────────────────────────────────────────
     @app.route('/')
@@ -223,6 +229,41 @@ def create_app():
         db.session.commit()
         return jsonify({'ok': True})
 
+    @app.route('/api/links/<int:link_id>/confirm', methods=['POST'])
+    def confirm_link(link_id):
+        nl = NodeLink.query.get_or_404(link_id)
+        nl.status = 'confirmed'
+        db.session.commit()
+        return jsonify(nl.to_dict())
+
+    @app.route('/api/links/<int:link_id>/reject', methods=['POST'])
+    def reject_link(link_id):
+        nl = NodeLink.query.get_or_404(link_id)
+        db.session.delete(nl)
+        db.session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/ai/describe-link/<int:link_id>', methods=['POST'])
+    def describe_link_endpoint(link_id):
+        nl = NodeLink.query.get_or_404(link_id)
+        if nl.description:
+            return jsonify({'description': nl.description})
+        from_node = db.session.get(Node, nl.from_id)
+        to_node = db.session.get(Node, nl.to_id)
+        if not from_node or not to_node:
+            return jsonify({'description': None})
+        project = Project.query.first()
+        description = ai.describe_link(
+            project.to_dict() if project else {},
+            from_node.to_dict(),
+            to_node.to_dict(),
+            nl.rel,
+        )
+        if description:
+            nl.description = description
+            db.session.commit()
+        return jsonify({'description': description})
+
     @app.route('/api/ai/link-decisions', methods=['POST'])
     def link_all_decisions():
         """Trigger AI linking for every decision node across all branches."""
@@ -289,6 +330,19 @@ def create_app():
     def delete_contact(contact_id):
         c = Contact.query.get_or_404(contact_id)
         db.session.delete(c)
+        db.session.commit()
+        return jsonify({'ok': True})
+
+    # ── Inbox suggestions ─────────────────────────────────────────────────────
+    @app.route('/api/inbox')
+    def get_inbox():
+        items = InboxSuggestion.query.filter_by(dismissed=False).order_by(InboxSuggestion.created_at).all()
+        return jsonify([i.to_dict() for i in items])
+
+    @app.route('/api/inbox/<int:item_id>/dismiss', methods=['POST'])
+    def dismiss_inbox(item_id):
+        item = InboxSuggestion.query.get_or_404(item_id)
+        item.dismissed = True
         db.session.commit()
         return jsonify({'ok': True})
 
@@ -454,6 +508,7 @@ def _trigger_decision_links(app, ai, decision_node_id):
                     to_id=lnk['to_id'],
                     rel=lnk.get('rel', 'implements'),
                     is_ai=True,
+                    status='pending',
                 ))
             db.session.commit()
             logger.info('Decision links for node %d: %d links stored', n.id, len(links or []))

@@ -246,6 +246,21 @@ const API = {
     return r.json();
   },
 
+  async describeLink(linkId) {
+    const r = await fetch(`/api/ai/describe-link/${linkId}`, { method: 'POST' });
+    return r.json();
+  },
+
+  async confirmLink(linkId) {
+    const r = await fetch(`/api/links/${linkId}/confirm`, { method: 'POST' });
+    return r.json();
+  },
+
+  async rejectLink(linkId) {
+    const r = await fetch(`/api/links/${linkId}/reject`, { method: 'POST' });
+    return r.json();
+  },
+
   async linkAllDecisions() {
     const r = await fetch('/api/ai/link-decisions', { method: 'POST' });
     return r.json();
@@ -276,6 +291,16 @@ const API = {
 
   async deleteContact(contactId) {
     const r = await fetch(`/api/contacts/${contactId}`, { method: 'DELETE' });
+    return r.json();
+  },
+
+  async getInbox() {
+    const r = await fetch('/api/inbox');
+    return r.json();
+  },
+
+  async dismissInbox(itemId) {
+    const r = await fetch(`/api/inbox/${itemId}/dismiss`, { method: 'POST' });
     return r.json();
   },
 

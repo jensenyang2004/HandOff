@@ -106,6 +106,8 @@ class NodeLink(db.Model):
     to_id = db.Column(db.Integer, db.ForeignKey('node.id'), nullable=False)
     rel = db.Column(db.String(30), nullable=False, default='implements')
     is_ai = db.Column(db.Boolean, default=True)
+    status = db.Column(db.String(20), default='confirmed')  # pending | confirmed | rejected
+    description = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -115,6 +117,8 @@ class NodeLink(db.Model):
             'to_id': self.to_id,
             'rel': self.rel,
             'is_ai': self.is_ai,
+            'status': self.status or 'confirmed',
+            'description': self.description or '',
             'created_at': self.created_at.isoformat(),
         }
 
@@ -139,6 +143,36 @@ class Contact(db.Model):
             'role': self.role or '',
             'email': self.email or '',
             'notes': self.notes or '',
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class InboxSuggestion(db.Model):
+    __tablename__ = 'inbox_suggestion'
+    id = db.Column(db.Integer, primary_key=True)
+    source = db.Column(db.String(20), nullable=False)   # 'git' | 'slack'
+    title = db.Column(db.String(200), nullable=False)
+    raw_text = db.Column(db.Text, default='')
+    nodes_json = db.Column(db.Text, default='[]')
+    branch_slug = db.Column(db.String(50), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    dismissed = db.Column(db.Boolean, default=False)
+
+    @property
+    def nodes(self):
+        try:
+            return json.loads(self.nodes_json or '[]')
+        except Exception:
+            return []
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source': self.source,
+            'title': self.title,
+            'raw_text': self.raw_text or '',
+            'nodes': self.nodes,
+            'branch_slug': self.branch_slug or '',
             'created_at': self.created_at.isoformat(),
         }
 

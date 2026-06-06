@@ -345,6 +345,44 @@ Return [] if no clear causal links exist."""
             logger.error('link_decision_to_nodes failed: %s', e)
             return []
 
+    def describe_link(self, project, decision_node, linked_node, rel):
+        """Generate one sentence explaining why two nodes are causally linked."""
+        if not self.enabled:
+            return self._mock_describe_link(rel)
+
+        proj_name = (project or {}).get('name', 'this project')
+        dmeta = decision_node.get('metadata') or {}
+        lmeta = linked_node.get('metadata') or {}
+        d_title = dmeta.get('title') or decision_node.get('content', '')
+        d_rationale = dmeta.get('rationale', '')
+        l_title = lmeta.get('title') or linked_node.get('content', '')
+        l_type = linked_node.get('type', 'note')
+
+        prompt = f"""Project: {proj_name}
+
+Decision: "{d_title}"
+{('Rationale: ' + d_rationale) if d_rationale else ''}
+
+Linked node (type={l_type}): "{l_title}"
+Relationship: {rel}
+
+In one concise sentence (under 30 words), explain the specific causal connection that "{rel.replace('_', ' ')}" describes between these two nodes.
+Return only the sentence. No quotes, no preamble."""
+
+        try:
+            return self._call(prompt).strip()
+        except Exception as e:
+            logger.error('describe_link failed: %s', e)
+            return self._mock_describe_link(rel)
+
+    def _mock_describe_link(self, rel):
+        return {
+            'implements': 'This commit directly implements the architectural choice recorded in the decision.',
+            'validates': 'This experiment result confirms that the decision approach was correct.',
+            'triggered_by': 'This meeting or finding surfaced the problem that prompted the decision.',
+            'supersedes': 'This decision overrides an earlier choice that is no longer valid.',
+        }.get(rel, 'These two nodes share a documented causal relationship.')
+
     def generate_weekly_digest(self, project, user, branch_nodes):
         """Generate a weekly digest for one employee across their branches."""
         if not self.enabled:

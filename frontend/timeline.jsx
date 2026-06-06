@@ -91,6 +91,21 @@ function AssignButton({ entry, onRefresh }) {
 function EntryDrawer({ e, onClose, onRefresh }) {
   const { TYPE_META, PEOPLE, LANES, fmtTime, relTime, ENTRIES, TASKS, LINKS } = window.HANDOFF;
   const [relinking, setRelinking] = useState(false);
+  const [linkActions, setLinkActions] = useState({});
+
+  const handleConfirmLink = async (linkId) => {
+    setLinkActions(a => ({ ...a, [linkId]: 'confirming' }));
+    await API.confirmLink(linkId);
+    setLinkActions(a => { const n = { ...a }; delete n[linkId]; return n; });
+    onRefresh();
+  };
+
+  const handleRejectLink = async (linkId) => {
+    setLinkActions(a => ({ ...a, [linkId]: 'rejecting' }));
+    await API.rejectLink(linkId);
+    setLinkActions(a => { const n = { ...a }; delete n[linkId]; return n; });
+    onRefresh();
+  };
 
   const decisionLinks = e.type === 'decision'
     ? (LINKS || []).filter(l => l.from_id === e.nodeId || l.to_id === e.nodeId)
@@ -194,14 +209,25 @@ function EntryDrawer({ e, onClose, onRefresh }) {
                     const lm = TYPE_META[linked.type] || TYPE_META.note;
                     const llane = LANES.find(l => l.id === linked.lane);
                     const REL_COLORS = { implements: 'var(--teal)', validates: 'var(--green)', triggered_by: 'var(--amber)', supersedes: 'var(--red)' };
+                    const isPending = link.status === 'pending' && link.is_ai;
+                    const acting = linkActions[link.id];
                     return (
-                      <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', background: 'var(--bg)', border: `1px solid ${lm.color}33`, borderRadius: 7 }}>
+                      <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', background: 'var(--bg)', border: `1px solid ${isPending ? 'var(--amber)44' : lm.color + '33'}`, borderRadius: 7, opacity: acting ? 0.5 : 1 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: lm.color, flex: '0 0 auto' }} />
                         <span style={{ fontSize: 10, fontWeight: 700, color: REL_COLORS[link.rel] || 'var(--muted)', flex: '0 0 auto', textTransform: 'uppercase', letterSpacing: '.04em' }}>{link.rel.replace('_', ' ')}</span>
                         <span style={{ flex: 1, fontSize: 12, color: '#d2d2da', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {linked.title || linked.label}
                         </span>
                         {llane && <span style={{ fontSize: 10, color: 'var(--muted)', flex: '0 0 auto' }}>{llane.name}</span>}
+                        {isPending && (
+                          <>
+                            <span style={{ fontSize: 9, color: 'var(--amber)', flex: '0 0 auto', fontWeight: 600 }}>待確認</span>
+                            <button className="btn btn-ghost btn-icon" style={{ padding: '2px 5px', fontSize: 11, color: 'var(--green)', flex: '0 0 auto' }}
+                              disabled={!!acting} onClick={() => handleConfirmLink(link.id)} title="Confirm">✓</button>
+                            <button className="btn btn-ghost btn-icon" style={{ padding: '2px 5px', fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}
+                              disabled={!!acting} onClick={() => handleRejectLink(link.id)} title="Reject">✕</button>
+                          </>
+                        )}
                         {!link.is_ai && <span style={{ fontSize: 9, color: 'var(--muted)', flex: '0 0 auto' }}>manual</span>}
                       </div>
                     );
@@ -433,11 +459,19 @@ function TaskDrawer({ task, onClose, onRefresh }) {
 }
 
 // ── Branch context panel ──────────────────────────────────────────────────
-function BranchContextPanel({ lane, onClose, onRefresh }) {
-  const { relTime } = window.HANDOFF;
+function BranchContextPanel({ lane, onClose, onRefresh, onShowDecisionFlow }) {
+  const { relTime, LINKS, ENTRIES, TASKS } = window.HANDOFF;
   const [contextDoc, setContextDoc] = useState(lane.context_doc || '');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const laneNodeRawIds = new Set([
+    ...ENTRIES.filter(e => e.lane === lane.id).map(e => e.nodeId),
+    ...TASKS.filter(t => t.lane === lane.id).map(t => t.nodeId),
+  ]);
+  const pendingLinksCount = (LINKS || []).filter(l =>
+    l.status === 'pending' && (laneNodeRawIds.has(l.from_id) || laneNodeRawIds.has(l.to_id))
+  ).length;
 
   const save = async () => {
     setSaving(true);
@@ -507,6 +541,21 @@ function BranchContextPanel({ lane, onClose, onRefresh }) {
             ) : (
               <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
                 No summary yet — generated automatically after 5 new entries.
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 16, borderTop: '1px solid var(--border-soft)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)' }}>
+              <Icon name="clock" size={12} />
+              落後 {lane.node_count_since_last_summary || 0} 個 node updates
+            </div>
+            {pendingLinksCount > 0 && (
+              <div onClick={() => { onClose(); onShowDecisionFlow && onShowDecisionFlow(); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--amber)', cursor: 'pointer', fontWeight: 500 }}
+                title="Click to view pending links on timeline">
+                <Icon name="warn" size={12} color="var(--amber)" />
+                待確認 link {pendingLinksCount} 個
               </div>
             )}
           </div>
@@ -1399,7 +1448,7 @@ function BranchForkOverlay({ containerW, style }) {
 }
 
 // ── Decision thread SVG overlay ────────────────────────────────────────────
-function DecisionThreadOverlay({ decisionFocus, viewMode, fracAdjAll, containerW, style, hoveredNodeId }) {
+function DecisionThreadOverlay({ decisionFocus, viewMode, fracAdjAll, containerW, style, hoveredNodeId, onLinkClick }) {
   const { LANES, ENTRIES, TASKS, LINKS, TYPE_META } = window.HANDOFF;
   const showAll = viewMode === 'decision-flow' && !decisionFocus;
   const links = showAll ? (LINKS || []) : (decisionFocus?.links || []);
@@ -1453,16 +1502,31 @@ function DecisionThreadOverlay({ decisionFocus, viewMode, fracAdjAll, containerW
         if (!from || !to) return null;
         const dx = (to.x - from.x) * 0.45;
         const d = `M ${from.x} ${from.y} C ${from.x + dx} ${from.y} ${to.x - dx} ${to.y} ${to.x} ${to.y}`;
+        const isPending = link.status === 'pending';
         const isHot = hoveredRawId !== null && (link.from_id === hoveredRawId || link.to_id === hoveredRawId);
-        const opacity = isHot ? 0.9 : (hoveredRawId !== null ? 0.1 : 0.55);
+        const baseOpacity = isPending ? 0.45 : 0.6;
+        const opacity = isHot ? 0.9 : (hoveredRawId !== null ? 0.08 : baseOpacity);
+        const mx = (from.x + to.x) / 2;
+        const my = (from.y + to.y) / 2;
         return (
           <g key={i}>
-            {isHot && <path d={d} fill="none" stroke={color} strokeWidth="9" strokeOpacity="0.12" />}
+            {/* Wide transparent hit area — captures clicks on the arrow */}
+            <path d={d} fill="none" stroke="transparent" strokeWidth="16"
+              style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+              onClick={() => onLinkClick && onLinkClick(link)} />
+            {isHot && <path d={d} fill="none" stroke={color} strokeWidth="9" strokeOpacity="0.12" style={{ pointerEvents: 'none' }} />}
             <path d={d} fill="none" stroke={color}
               strokeWidth={isHot ? 2.5 : 1.5}
-              strokeDasharray={isHot ? 'none' : '5 4'}
+              strokeDasharray={isPending ? '5 4' : 'none'}
               strokeOpacity={opacity}
+              style={{ pointerEvents: 'none' }}
               markerEnd={`url(#df-arrow${isHot ? '-hot' : ''})`} />
+            {isPending && (
+              <text x={mx} y={my - 6} textAnchor="middle" fontSize="9" fill={color} fillOpacity={isHot ? 0.9 : 0.55}
+                style={{ pointerEvents: 'none' }} fontFamily="system-ui, sans-serif" fontWeight="600">
+                待確認
+              </text>
+            )}
           </g>
         );
       })}
@@ -1653,6 +1717,160 @@ function TeamPanel({ hiddenUsers, onToggle, onRefresh }) {
   );
 }
 
+// ── Link detail drawer ────────────────────────────────────────────────────
+function LinkDrawer({ link, onClose, onRefresh }) {
+  const { ENTRIES, TASKS, TYPE_META, LANES } = window.HANDOFF;
+  const [description, setDescription] = useState(null);
+  const [loadingDesc, setLoadingDesc] = useState(true);
+  const [acting, setActing] = useState(null);
+
+  const fromNode = ENTRIES.find(e => e.nodeId === link.from_id) || TASKS.find(t => t.nodeId === link.from_id);
+  const toNode   = ENTRIES.find(e => e.nodeId === link.to_id)   || TASKS.find(t => t.nodeId === link.to_id);
+
+  useEffect(() => {
+    setLoadingDesc(true);
+    API.describeLink(link.id)
+      .then(r => { setDescription(r.description || null); setLoadingDesc(false); })
+      .catch(() => setLoadingDesc(false));
+  }, [link.id]);
+
+  const confirm = async () => {
+    setActing('confirming');
+    await API.confirmLink(link.id);
+    onRefresh(); onClose();
+  };
+
+  const reject = async () => {
+    setActing('rejecting');
+    await API.rejectLink(link.id);
+    onRefresh(); onClose();
+  };
+
+  const REL_COLORS = { implements: 'var(--teal)', validates: 'var(--green)', triggered_by: 'var(--amber)', supersedes: 'var(--red)' };
+  const relColor = REL_COLORS[link.rel] || 'var(--muted)';
+  const isPending = link.status === 'pending';
+
+  function NodeCard({ node }) {
+    if (!node) return <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>Node not found</div>;
+    const m = TYPE_META[node.type] || TYPE_META.note;
+    const lane = LANES.find(l => l.id === node.lane);
+    return (
+      <div style={{ display: 'flex', gap: 10, padding: '10px 12px', background: 'var(--bg)', border: `1px solid ${m.color}33`, borderRadius: 8 }}>
+        <span style={{ color: m.color, display: 'inline-flex', flex: '0 0 auto', marginTop: 1 }}>
+          <Icon name={m.glyph} size={14} />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <Pill color={m.color} style={{ fontSize: 10 }}>{m.label}</Pill>
+            {lane && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lane.name}</span>}
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {node.title || node.label}
+          </div>
+          {node.hash && <div className="mono" style={{ fontSize: 11, color: 'var(--teal)', marginTop: 2 }}>{node.hash}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 80, animation: 'fadeIn .15s ease both' }} />
+      <div style={{
+        position: 'absolute', top: 0, right: 0, bottom: 0, width: 390, zIndex: 81,
+        background: 'var(--surface)', borderLeft: '1px solid var(--border)',
+        boxShadow: '-18px 0 50px rgba(0,0,0,.5)', animation: 'slideInRight .22s cubic-bezier(.2,.8,.2,1) both',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px', borderBottom: '1px solid var(--border-soft)' }}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, background: relColor + '1f', color: relColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="decision" size={16} />
+          </span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: relColor, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+              {link.rel.replace(/_/g, ' ')}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {isPending ? 'AI suggestion — pending review' : link.is_ai ? 'AI link · confirmed' : 'Manual link'}
+            </div>
+          </div>
+          {isPending && <Pill color="var(--amber)" style={{ fontSize: 10 }}>待確認</Pill>}
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><Icon name="close" size={16} color="var(--muted-2)" /></button>
+        </div>
+
+        <div style={{ padding: '18px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Decision (from) */}
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', marginBottom: 7 }}>Decision</div>
+            <NodeCard node={fromNode} />
+          </div>
+
+          {/* Relationship badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-soft)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 99, border: `1px solid ${relColor}44`, background: relColor + '12' }}>
+              <Icon name="arrowRight" size={12} color={relColor} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: relColor, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                {link.rel.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-soft)' }} />
+          </div>
+
+          {/* Linked node (to) */}
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', marginBottom: 7 }}>Linked node</div>
+            <NodeCard node={toNode} />
+          </div>
+
+          {/* AI explanation */}
+          <div style={{ padding: '13px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 9 }}>
+              <Icon name="sparkle" size={12} color="var(--purple)" />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Why this link?</span>
+            </div>
+            {loadingDesc ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: 'var(--muted)' }}>
+                <div style={{ width: 12, height: 12, border: '2px solid var(--border)', borderTopColor: 'var(--purple)', borderRadius: '50%', animation: 'spin .8s linear infinite', flex: '0 0 auto' }} />
+                Generating explanation…
+              </div>
+            ) : description ? (
+              <div style={{ fontSize: 13, lineHeight: 1.65, color: '#d6d6dd', textWrap: 'pretty' }}>{description}</div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>No description available.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border-soft)', display: 'flex', gap: 9 }}>
+          {isPending ? (
+            <>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }}
+                disabled={!!acting} onClick={reject}>
+                <Icon name="close" size={14} color="var(--muted-2)" />
+                {acting === 'rejecting' ? ' Rejecting…' : ' Reject'}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center', background: 'var(--teal)', borderColor: 'var(--teal)' }}
+                disabled={!!acting} onClick={confirm}>
+                <Icon name="check" size={14} />
+                {acting === 'confirming' ? ' Confirming…' : ' Confirm link'}
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--red)' }}
+              disabled={!!acting} onClick={reject}>
+              <Icon name="close" size={14} />
+              {acting === 'rejecting' ? 'Removing…' : 'Remove link'}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Timeline screen ────────────────────────────────────────────────────────
 function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHandover, onRefresh }) {
   const { LANES, ENTRIES, TASKS, LINKS, frac } = window.HANDOFF;
@@ -1669,6 +1887,7 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
   const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'decision-flow'
   const [linking, setLinking] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
+  const [selectedLink, setSelectedLink] = useState(null);
   const containerRef = useRef(null);
   const [containerW, setContainerW] = useState(1800);
 
@@ -1768,7 +1987,8 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
               fracAdjAll={fracAdjAll}
               containerW={containerW}
               style={style}
-              hoveredNodeId={hoveredNodeId} />
+              hoveredNodeId={hoveredNodeId}
+              onLinkClick={setSelectedLink} />
           </div>
         </div>
         <TeamPanel hiddenUsers={hiddenUsers} onToggle={toggleUser} onRefresh={onRefresh} />
@@ -1776,11 +1996,13 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
 
       <Scrubber />
 
+      {selectedLink && <LinkDrawer link={selectedLink} onClose={() => setSelectedLink(null)} onRefresh={() => { setSelectedLink(null); onRefresh(); }} />}
       {freeLog !== null && <FreeformModal initialLaneId={freeLog.laneId} onClose={() => setFreeLog(null)} onRefresh={() => { setFreeLog(null); onRefresh(); }} />}
       {quickAdd && <CreateTaskModal pos={quickAdd} lane={quickAdd.lane} onClose={() => setQuickAdd(null)} onRefresh={() => { setQuickAdd(null); onRefresh(); }} />}
       {selected && <EntryDrawer e={selected} onClose={closeDrawer} onRefresh={onRefresh} />}
       {selectedTask && <TaskDrawer task={selectedTask} onClose={() => setSelectedTask(null)} onRefresh={() => { setSelectedTask(null); onRefresh(); }} />}
-      {contextLane && <BranchContextPanel lane={contextLane} onClose={() => setContextLane(null)} onRefresh={() => { setContextLane(null); onRefresh(); }} />}
+      {contextLane && <BranchContextPanel lane={contextLane} onClose={() => setContextLane(null)} onRefresh={() => { setContextLane(null); onRefresh(); }}
+        onShowDecisionFlow={() => { setContextLane(null); setViewMode('decision-flow'); }} />}
       {addBranch && <AddBranchModal onClose={() => setAddBranch(false)} onRefresh={() => { setAddBranch(false); onRefresh(); }} />}
     </div>
   );
