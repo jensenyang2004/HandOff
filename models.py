@@ -29,13 +29,15 @@ class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.String(50), primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    email = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200), nullable=False, unique=True)
     role = db.Column(db.String(20), nullable=False, default='employee')
     github_handle = db.Column(db.String(100))
+    slack_username = db.Column(db.String(100), default='')
     color = db.Column(db.String(7), default='#7F77DD')
     initials = db.Column(db.String(5))
     departing = db.Column(db.Boolean, default=False)
     last_day = db.Column(db.String(20))
+    password_hash = db.Column(db.String(256), nullable=True)
 
     def to_dict(self):
         return {
@@ -43,7 +45,8 @@ class User(db.Model):
             'name': self.name,
             'email': self.email,
             'role': self.role,
-            'github_handle': self.github_handle,
+            'github_handle': self.github_handle or '',
+            'slack_username': self.slack_username or '',
             'color': self.color,
             'initials': self.initials or '',
             'departing': self.departing,
