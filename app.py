@@ -171,24 +171,16 @@ def create_app():
         n.meta = meta
         db.session.add(n)
 
-        # Increment staleness counters
+        # Increment staleness counters (summary update is manual via Re-sync in Context tab)
         b.nodes_since_context_sync += 1
         b.node_count_since_last_summary += 1
         project = Project.query.first()
         if project:
             project.nodes_since_last_link = (project.nodes_since_last_link or 0) + 1
-        context_updating = False
-        if b.node_count_since_last_summary >= 5:
-            b.node_count_since_last_summary = 0
-            b.context_updating = True
-            context_updating = True
 
         db.session.commit()
 
-        if context_updating:
-            _trigger_summary_update(app, ai, b.id)
-
-        return jsonify({**n.to_dict(), 'context_updating': context_updating}), 201
+        return jsonify({**n.to_dict(), 'context_updating': False}), 201
 
     @app.route('/api/nodes/<int:node_id>', methods=['PATCH'])
     def update_node(node_id):

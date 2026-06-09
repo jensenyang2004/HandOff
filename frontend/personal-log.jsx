@@ -81,7 +81,7 @@ function CommitMentionInput({ value, onChange, onKeyDown: outerKeyDown, style, p
   const { marginBottom, ...inputStyle } = style || {};
 
   return (
-    <div style={{ flex: style?.flex, minWidth: 0, marginBottom }}>
+    <div style={{ flex: style?.flex, minWidth: 0, marginBottom, position: 'relative' }}>
       <input ref={inputRef} value={value} onChange={handleChange} onKeyDown={handleKeyDown}
         onClick={e => {
           const pos = e.target.selectionStart;
@@ -92,10 +92,11 @@ function CommitMentionInput({ value, onChange, onKeyDown: outerKeyDown, style, p
         style={{ ...inputStyle, flex: undefined, width: inputStyle?.width || (inputStyle?.flex ? '100%' : undefined) }}
         placeholder={placeholder} autoFocus={autoFocus} />
 
-      {/* Inline panel — no position:fixed/absolute, no coordinate math, no clipping issues */}
+      {/* Panel floats above the input */}
       {mention && filtered.length > 0 && (
         <div style={{
-          marginTop: 4, background: '#202027', border: '1px solid #3a3a45',
+          position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 200,
+          background: '#202027', border: '1px solid #3a3a45',
           borderRadius: 9, boxShadow: '0 8px 28px rgba(0,0,0,.7)', overflow: 'hidden',
         }}>
           {filtered.map((item, i) => {

@@ -80,28 +80,55 @@ https://github.com/triton-inference-server/server
 
 ---
 
-｜Decision Flow：決策如何串起來
+｜Decision Flow：看 AI 怎麼分析決策脈絡、確認連結
 
 操作：
+── 第一步：切換 Decision Flow，看 AI 建議的連結 ──
+
 1. 回到 Timeline。
-2. 按 toolbar 右方的「Decision flow」按鈕（紫色菱形圖示），切換到 Decision Flow 模式。
-3. 展示 timeline 上浮現的曲線箭頭，連接各個 decision 節點到相關的 commit 和 experiment。
-4. 指向 OCR Pipeline lane 上的 Decision 節點「Switch detector backbone from ResNet50 to EfficientNet-B3」：
-   - 有一條 implements 箭頭指向 commit「Switch ResNet50 → EfficientNet backbone」（hash: a3f9c2d）
-   - 有一條 validates 箭頭指向 experiment「EfficientNet-B3 — 87.2% char-F1」
-5. 點擊其中一條箭頭，打開 Link Drawer：
-   - 展示上方「Decision」card 和下方「Linked node」card。
-   - 展示中間的關係標籤（例如「IMPLEMENTS」）。
-   - 展示「Why this link?」AI 產生的一句話解釋。
-6. 關閉 Drawer。
-7. 點開 Decision 節點本身（drawer），展示「Decision links」區塊，可見 implements 和 validates 兩條 confirmed 連結，及「Re-link」按鈕。
-8. 可選：回到剛才 Free Log 新增的 Deployment Pipeline decision，按「Re-link」，讓 AI 去連結對應的 Triton commit 和 reference。
+2. 按 toolbar 右方的「Link decisions」按鈕，讓 AI 掃描所有 decision 節點並建立連結建議。
+   （按鈕會短暫顯示「Linking…」，完成後 badge 消失。）
+3. 接著按旁邊的「Decision flow」按鈕切換到 Decision Flow 模式。
+4. Timeline 上浮現曲線箭頭。
+   - 實線箭頭 = 已確認的連結。
+   - 虛線箭頭 = AI 建議、待確認（箭頭上方有「待確認」小標籤）。
+
+── 第二步：點開 AI 建議的連結，看內容並確認 ──
+
+5. 點擊 OCR Pipeline lane 上的一條虛線箭頭，
+   例如從「Switch detector backbone from ResNet50 to EfficientNet-B3」指向
+   commit「Switch ResNet50 → EfficientNet backbone」（a3f9c2d）的那條。
+   → 右側滑出 Link Drawer。
+
+6. 在 Link Drawer 裡確認以下內容：
+   - 上方「Decision」card：決策節點標題 + branch 名稱。
+   - 關係標籤（紫色）：「IMPLEMENTS」。
+   - 下方「Linked node」card：commit 標題 + hash a3f9c2d + branch 名稱。
+   - 「Why this link?」區塊：AI 生成一句話說明因果關係，例如
+     「This commit directly implements the backbone switch recorded in the decision.」
+
+7. 確認內容無誤，按底部的「Confirm link ✓」。
+   → Drawer 關閉，那條箭頭從虛線變成實線。
+
+── 第三步：拒絕一條不夠準確的建議 ──
+
+8. 找到另一條虛線箭頭（例如指向某個間接相關的 note），點擊打開 Link Drawer。
+9. 確認 AI 解釋後，判斷這條連結不夠精確，按「Reject」。
+   → Drawer 關閉，那條箭頭消失。
+
+── 第四步：從 Decision 節點內部直接管理連結 ──
+
+10. 點開 Decision 節點「Switch detector backbone…」本身（點節點圓圈），
+    展示右側 Entry Drawer 裡的「Decision links」區塊：
+    - 每條連結旁有「待確認」標籤 + ✓ 和 ✕ 按鈕，可在這裡逐一確認或拒絕。
+    - 已 Confirm 的連結顯示為正常行，沒有操作按鈕。
+    - 右上角有「Re-link」按鈕，可隨時重新讓 AI 掃描這個 decision。
 
 旁白：
-「Handoff 還有一個重要功能：Decision Flow。當系統看到一個 decision 節點，它會用 AI 去分析這個決策和哪些 commit、experiment、meeting 有因果關係。」
-「這裡可以看到『切換 backbone 到 EfficientNet-B3』這個決策，被連結到實際執行的 commit a3f9c2d，以及驗證它有效的 87.2% 實驗結果。」
-「點擊連結的箭頭，可以看到 AI 生成的一句話解釋，說明這條連結的因果邏輯是什麼。」
-「對交接來說，這很重要。接手的人不只看到一個決策，而是能看到它是怎麼來的、對應哪個 commit、被哪個實驗驗證，以及後續有沒有人繼續接手。」
+「Free Log 加入的 decision 節點，不只是一筆文字紀錄。系統會讓 AI 去分析這個決策和哪些 commit、experiment 有因果關係，然後在 timeline 上畫出連結。」
+「這些連結一開始是 AI 的建議，用虛線顯示，上面標著『待確認』。Jensen 可以點開任何一條連結，看到兩端的節點、關係類型，以及 AI 對這條因果連結的一句話解釋。」
+「確認之後，虛線變成實線，代表這條連結已經被驗證過。覺得不對的可以直接拒絕。這個設計讓 AI 的判斷有人在把關，而不是直接寫死進去。」
+「對接手的人來說，這很重要。他不只看到一個決策，而是能看到：這個決策是怎麼來的、落地在哪個 commit、被哪個實驗驗證，而且這些連結都是有人確認過的，不是 AI 猜的。」
 
 
 ---

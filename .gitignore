@@ -3,3 +3,6 @@
 .venv
 .claude
 __pycache__
+handoff.db
+demo_video_script.md
+FINAL_TODO.md
