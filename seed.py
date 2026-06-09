@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from werkzeug.security import generate_password_hash
 from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion
 
 
@@ -25,15 +26,20 @@ def seed_if_empty():
     db.session.add(project)
 
     # ── Users ──────────────────────────────────────────────────────────────
+    _demo_pw = generate_password_hash('demo')
     users = [
         User(id='jensen', name='Jensen Park', email='jensen@example.com',
-             role='employee', color='#7F77DD', initials='JP', departing=True, last_day='Jun 6'),
+             role='employee', color='#7F77DD', initials='JP', departing=True, last_day='Jun 6',
+             github_handle='jensen-park', slack_username='jensen', password_hash=_demo_pw),
         User(id='maya', name='Maya Chen', email='maya@example.com',
-             role='employee', color='#1D9E75', initials='MC'),
+             role='employee', color='#1D9E75', initials='MC',
+             github_handle='maya-chen', slack_username='maya', password_hash=_demo_pw),
         User(id='diego', name='Diego Torres', email='diego@example.com',
-             role='employee', color='#EF9F27', initials='DT'),
+             role='employee', color='#EF9F27', initials='DT',
+             github_handle='diego-torres', slack_username='diego', password_hash=_demo_pw),
         User(id='priya', name='Priya Rao', email='priya@example.com',
-             role='manager', color='#378ADD', initials='PR'),
+             role='manager', color='#378ADD', initials='PR',
+             github_handle='priya-rao', slack_username='priya', password_hash=_demo_pw),
     ]
     for u in users:
         db.session.add(u)

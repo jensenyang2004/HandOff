@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion
 from ai_service import AIService
@@ -37,6 +38,7 @@ def create_app():
         existing = [c['name'] for c in inspector.get_columns('branch')]
         existing_proj = [c['name'] for c in inspector.get_columns('project')]
         existing_nl = [c['name'] for c in inspector.get_columns('node_link')]
+        existing_user = [c['name'] for c in inspector.get_columns('user')]
         with db.engine.connect() as conn:
             if 'status' not in existing_nl:
                 conn.execute(text("ALTER TABLE node_link ADD COLUMN status VARCHAR(20) DEFAULT 'confirmed'"))
@@ -52,6 +54,10 @@ def create_app():
                 conn.execute(text("ALTER TABLE project ADD COLUMN nodes_since_last_link INTEGER DEFAULT 0"))
             if 'last_linked_at' not in existing_proj:
                 conn.execute(text("ALTER TABLE project ADD COLUMN last_linked_at DATETIME"))
+            if 'password_hash' not in existing_user:
+                conn.execute(text("ALTER TABLE user ADD COLUMN password_hash VARCHAR(256)"))
+            if 'slack_username' not in existing_user:
+                conn.execute(text("ALTER TABLE user ADD COLUMN slack_username VARCHAR(100) DEFAULT ''"))
             conn.commit()
         from seed import seed_if_empty, seed_inbox_if_empty
         seed_if_empty()
@@ -80,6 +86,68 @@ def create_app():
             p.context_doc = data['context_doc']
         db.session.commit()
         return jsonify(p.to_dict())
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+    @app.route('/api/auth/register', methods=['POST'])
+    def register():
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        email = (data.get('email') or '').strip().lower()
+        password = data.get('password') or ''
+        github_handle = (data.get('github_handle') or '').strip()
+        slack_username = (data.get('slack_username') or '').strip()
+
+        if not name or not email or not password:
+            return jsonify({'error': 'name, email, and password are required'}), 400
+        if len(password) < 6:
+            return jsonify({'error': 'password must be at least 6 characters'}), 400
+        if User.query.filter_by(email=email).first():
+            return jsonify({'error': 'email already registered'}), 409
+
+        # Generate a stable id and display helpers from the name
+        base_id = email.split('@')[0].lower().replace('.', '-')[:30]
+        user_id = base_id
+        suffix = 1
+        while User.query.get(user_id):
+            user_id = f'{base_id}-{suffix}'
+            suffix += 1
+
+        words = name.split()
+        initials = (words[0][0] + words[-1][0]).upper() if len(words) >= 2 else words[0][:2].upper()
+        colors = ['#7F77DD', '#1D9E75', '#EF9F27', '#378ADD', '#E05C5C', '#5CB8E0']
+        color = colors[User.query.count() % len(colors)]
+
+        user = User(
+            id=user_id,
+            name=name,
+            email=email,
+            password_hash=generate_password_hash(password),
+            github_handle=github_handle,
+            slack_username=slack_username,
+            color=color,
+            initials=initials,
+            role='employee',
+        )
+        db.session.add(user)
+        db.session.commit()
+        return jsonify(user.to_dict()), 201
+
+    @app.route('/api/auth/login', methods=['POST'])
+    def login():
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        password = data.get('password') or ''
+
+        if not email or not password:
+            return jsonify({'error': 'email and password are required'}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user or not user.password_hash:
+            return jsonify({'error': 'invalid credentials'}), 401
+        if not check_password_hash(user.password_hash, password):
+            return jsonify({'error': 'invalid credentials'}), 401
+
+        return jsonify(user.to_dict())
 
     # ── Users ────────────────────────────────────────────────────────────────
     @app.route('/api/users')
