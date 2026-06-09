@@ -3,6 +3,7 @@ const Icon = ({ name, size = 16, color = 'currentColor', strokeWidth = 1.6, styl
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
     stroke: color, strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round', style };
   switch (name) {
+    case 'exit':     return <svg {...p}><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>;
     case 'commit':   return <svg {...p}><circle cx="12" cy="12" r="3.2"/><line x1="3" y1="12" x2="8.8" y2="12"/><line x1="15.2" y1="12" x2="21" y2="12"/></svg>;
     case 'flask':    return <svg {...p}><path d="M9 3h6"/><path d="M10 3v5.5L5.2 17a2 2 0 0 0 1.8 3h10a2 2 0 0 0 1.8-3L14 8.5V3"/><line x1="7.5" y1="14" x2="16.5" y2="14"/></svg>;
     case 'link':     return <svg {...p}><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.5 1.5"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.5-1.5"/></svg>;
