@@ -236,7 +236,13 @@ function App() {
     setLoading(true);
     loadHandoffData()
       .then(() => {
-        if (currentUser) window.HANDOFF.CURRENT_USER = currentUser;
+        const saved = localStorage.getItem('handoff_user');
+        if (saved && window.HANDOFF.PEOPLE?.[saved]) {
+          window.HANDOFF.CURRENT_USER = saved;
+          setCurrentUser(saved);
+        } else if (currentUser) {
+          window.HANDOFF.CURRENT_USER = currentUser;
+        }
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -245,16 +251,17 @@ function App() {
   const refresh = () => setDataVersion(v => v + 1);
 
   const handleLogin = (user) => {
-    // Ensure the user is in PEOPLE (important for newly registered users)
     if (!window.HANDOFF.PEOPLE) window.HANDOFF.PEOPLE = {};
     window.HANDOFF.PEOPLE[user.id] = { ...user, isManager: user.role === 'manager' };
     window.HANDOFF.CURRENT_USER = user.id;
+    localStorage.setItem('handoff_user', user.id);
     setCurrentUser(user.id);
     setScreen('timeline');
     refresh();
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('handoff_user');
     setCurrentUser(null);
     window.HANDOFF.CURRENT_USER = null;
   };
