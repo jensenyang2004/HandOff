@@ -109,8 +109,8 @@ function AuthScreen({ onLogin }) {
   );
 }
 
-// ── User switcher popover ──────────────────────────────────────────────────
-function UserSwitcher({ currentUser, onSwitch, onLogout }) {
+// ── User menu (avatar + logout only) ─────────────────────────────────────
+function UserMenu({ currentUser, onLogout }) {
   const { PEOPLE } = window.HANDOFF;
   const [open, setOpen] = useState(false);
   const me = PEOPLE[currentUser];
@@ -129,27 +129,18 @@ function UserSwitcher({ currentUser, onSwitch, onLogout }) {
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
           <div className="pop-in" style={{
-            position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, zIndex: 201,
+            position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 180, zIndex: 201,
             background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10,
             padding: 8, boxShadow: '0 14px 40px rgba(0,0,0,.5)',
           }}>
-            <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', padding: '4px 8px 8px' }}>View as</div>
-            {Object.values(PEOPLE).map(p => (
-              <button key={p.id} onClick={() => { onSwitch(p.id); setOpen(false); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 8px', background: p.id === currentUser ? '#ffffff10' : 'none', border: 'none', borderRadius: 7, cursor: 'pointer', color: 'var(--text)', fontSize: 12.5 }}
-                onMouseEnter={e => e.currentTarget.style.background = '#ffffff0d'}
-                onMouseLeave={e => e.currentTarget.style.background = p.id === currentUser ? '#ffffff10' : 'none'}>
-                <Avatar person={p} size={22} ring={p.id === currentUser} />
-                <div style={{ flex: 1, textAlign: 'left' }}>
-                  <div style={{ fontWeight: p.id === currentUser ? 600 : 400 }}>{p.name}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-                    {p.isManager ? 'Manager' : 'Employee'}{p.departing ? ' · departing' : ''}
-                  </div>
-                </div>
-                {p.id === currentUser && <Icon name="check" size={14} color="var(--purple)" />}
-              </button>
-            ))}
-            <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px 10px' }}>
+              <Avatar person={me} size={28} ring />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{me.name}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{me.isManager ? 'Manager' : 'Employee'}</div>
+              </div>
+            </div>
+            <div style={{ height: 1, background: 'var(--border)', marginBottom: 6 }} />
             <button onClick={() => { setOpen(false); onLogout(); }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 8px', background: 'none', border: 'none', borderRadius: 7, cursor: 'pointer', color: 'var(--red)', fontSize: 12.5 }}>
               <Icon name="exit" size={15} color="var(--red)" />
@@ -172,7 +163,7 @@ function OverdueBadge({ currentUser }) {
 }
 
 // ── Persistent nav bar ─────────────────────────────────────────────────────
-function NavBar({ currentUser, onSwitchUser, onLogout, screen, onGoTo }) {
+function NavBar({ currentUser, onLogout, screen, onGoTo }) {
   const { PEOPLE, PROJECT } = window.HANDOFF;
   const me = PEOPLE[currentUser];
   const isManager = me && me.isManager;
@@ -225,7 +216,7 @@ function NavBar({ currentUser, onSwitchUser, onLogout, screen, onGoTo }) {
         {isManager ? 'Manager' : me && me.departing ? 'Departing' : 'Employee'}
       </Pill>
 
-      <UserSwitcher currentUser={currentUser} onSwitch={onSwitchUser} onLogout={onLogout} />
+      <UserMenu currentUser={currentUser} onLogout={onLogout} />
     </div>
   );
 }
@@ -268,15 +259,6 @@ function App() {
     window.HANDOFF.CURRENT_USER = null;
   };
 
-  const switchUser = (userId) => {
-    setCurrentUser(userId);
-    window.HANDOFF.CURRENT_USER = userId;
-    const person = window.HANDOFF?.PEOPLE?.[userId];
-    const isManager = person?.isManager;
-    if (isManager && (screen === 'log' || screen === 'tasks')) setScreen('manager');
-    if (!isManager && screen === 'manager') setScreen('timeline');
-  };
-
   const goTo = (screenId) => setScreen(screenId);
 
   if (loading) return (
@@ -303,7 +285,7 @@ function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <NavBar currentUser={currentUser} onSwitchUser={switchUser} onLogout={handleLogout} screen={screen} onGoTo={goTo} />
+      <NavBar currentUser={currentUser} onLogout={handleLogout} screen={screen} onGoTo={goTo} />
 
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {screen === 'timeline' && (
