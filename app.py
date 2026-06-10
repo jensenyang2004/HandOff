@@ -1,5 +1,8 @@
 import os
 import json
+import hmac
+import hashlib
+import time
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -432,17 +435,73 @@ def create_app():
         db.session.commit()
         return jsonify({'ok': True, 'id': suggestion.id}), 201
 
+    def _verify_slack_signature(req):
+        """Slack request signing (https://api.slack.com/authentication/verifying-requests-from-slack).
+        Skipped when SLACK_SIGNING_SECRET is not configured (local dev / curl testing)."""
+        secret = os.environ.get('SLACK_SIGNING_SECRET')
+        if not secret:
+            return True
+        ts = req.headers.get('X-Slack-Request-Timestamp', '')
+        sig = req.headers.get('X-Slack-Signature', '')
+        if not ts or not sig:
+            return False
+        try:
+            if abs(time.time() - float(ts)) > 60 * 5:
+                return False  # replay protection
+        except ValueError:
+            return False
+        base = f'v0:{ts}:'.encode() + req.get_data()
+        expected = 'v0=' + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig)
+
+    def _store_slack_message(channel, slack_user, text, ts, display_name=None):
+        user = User.query.filter_by(slack_username=slack_user).first()
+        m = SlackMessage(
+            channel=channel,
+            user_id=user.id if user else None,
+            display_name=user.name if user else (display_name or slack_user),
+            text=text,
+            ts=ts,
+        )
+        db.session.add(m)
+        db.session.commit()
+        return m
+
     @app.route('/api/webhook/slack', methods=['POST'])
     def webhook_slack():
+        if not _verify_slack_signature(request):
+            return jsonify({'error': 'invalid slack signature'}), 401
         payload = request.get_json(silent=True) or {}
+
+        # Slack Events API: URL verification handshake
+        if payload.get('type') == 'url_verification':
+            return jsonify({'challenge': payload.get('challenge', '')})
+
+        # Slack Events API: message event callback
+        if payload.get('type') == 'event_callback':
+            event = payload.get('event') or {}
+            # skip non-messages, edits/joins (subtype) and bot echoes to avoid loops
+            if event.get('type') != 'message' or event.get('subtype') or event.get('bot_id'):
+                return jsonify({'ok': True, 'ignored': True})
+            channel = event.get('channel', '')
+            slack_user = event.get('user', '')
+            text = (event.get('text') or '').strip()
+            if not channel or not slack_user or not text:
+                return jsonify({'ok': True, 'ignored': True})
+            ts = datetime.utcnow()
+            try:
+                ts = datetime.utcfromtimestamp(float(event.get('ts')))
+            except (TypeError, ValueError):
+                pass
+            m = _store_slack_message(channel, slack_user, text, ts)
+            return jsonify({'ok': True, 'id': m.id}), 201
+
+        # Simplified custom schema (docs/slack-webhook-spec.md)
         channel = (payload.get('channel') or '').strip()
         slack_user = (payload.get('user') or '').strip()
         text = (payload.get('text') or '').strip()
         if not channel or not slack_user or not text:
             return jsonify({'error': 'channel, user, and text are required'}), 400
-
-        user = User.query.filter_by(slack_username=slack_user).first()
-        display_name = user.name if user else (payload.get('display_name') or slack_user)
 
         ts = datetime.utcnow()
         if payload.get('ts'):
@@ -451,15 +510,8 @@ def create_app():
             except (ValueError, TypeError):
                 pass
 
-        m = SlackMessage(
-            channel=channel,
-            user_id=user.id if user else None,
-            display_name=display_name,
-            text=text,
-            ts=ts,
-        )
-        db.session.add(m)
-        db.session.commit()
+        m = _store_slack_message(channel, slack_user, text, ts,
+                                 display_name=payload.get('display_name'))
         return jsonify({'ok': True, 'id': m.id}), 201
 
     @app.route('/api/inbox/slack/pending')
