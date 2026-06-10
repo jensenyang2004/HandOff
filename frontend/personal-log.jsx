@@ -523,6 +523,32 @@ function GitBanner({ item, onDismiss, onRefresh }) {
   );
 }
 
+// ── Inbox: shared raw Slack message log (used by both banners) ────────────
+function SlackMessageLog({ messages }) {
+  return (
+    <div style={{ background: 'var(--bg)', borderRadius: 9, padding: '11px 12px', margin: '12px 0 13px' }}>
+      {messages.map((m, i) => {
+        const initials = m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const hue = (m.name.charCodeAt(0) * 37 + m.name.charCodeAt(m.name.length - 1) * 13) % 360;
+        return (
+          <div key={i} style={{ display: 'flex', gap: 9, marginBottom: i < messages.length - 1 ? 10 : 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 6, background: `hsl(${hue},35%,22%)`, border: `1px solid hsl(${hue},40%,32%)`, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: `hsl(${hue},55%,65%)` }}>
+              {initials}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', marginBottom: 2 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6dd' }}>{m.name.split(' ')[0]}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{m.time}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: '#b0b0c0', lineHeight: 1.55, wordBreak: 'break-word' }}>{m.text}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Inbox: Slack message banner ────────────────────────────────────────────
 function SlackBanner({ item, onDismiss, onRefresh }) {
   const { LANES, CURRENT_USER, TYPE_META } = window.HANDOFF;
@@ -586,26 +612,7 @@ function SlackBanner({ item, onDismiss, onRefresh }) {
       {expanded && (
         <div style={{ padding: '0 15px 14px', borderTop: '1px solid #7F77DD1a' }}>
           {/* Slack message log */}
-          <div style={{ background: 'var(--bg)', borderRadius: 9, padding: '11px 12px', margin: '12px 0 13px' }}>
-            {messages.map((m, i) => {
-              const initials = m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-              const hue = (m.name.charCodeAt(0) * 37 + m.name.charCodeAt(m.name.length - 1) * 13) % 360;
-              return (
-                <div key={i} style={{ display: 'flex', gap: 9, marginBottom: i < messages.length - 1 ? 10 : 0 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 6, background: `hsl(${hue},35%,22%)`, border: `1px solid hsl(${hue},40%,32%)`, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: `hsl(${hue},55%,65%)` }}>
-                    {initials}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', marginBottom: 2 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6dd' }}>{m.name.split(' ')[0]}</span>
-                      <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{m.time}</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: '#b0b0c0', lineHeight: 1.55, wordBreak: 'break-word' }}>{m.text}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <SlackMessageLog messages={messages} />
 
           {/* Extracted nodes */}
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8 }}>
@@ -644,6 +651,8 @@ function SlackPendingBanner({ pending, onInterpreted }) {
   const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
   const [working, setWorking] = useStatePL(false);
   const [emptyResult, setEmptyResult] = useStatePL(false);
+  const [expanded, setExpanded] = useStatePL(false);
+  const messages = pending.messages || [];
 
   const interpret = async () => {
     if (working || !lane) return;
@@ -659,23 +668,35 @@ function SlackPendingBanner({ pending, onInterpreted }) {
   };
 
   return (
-    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', animation: 'slideUp .2s ease both' }}>
-      <Icon name="slack" size={17} color="var(--purple)" />
-      <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, minWidth: 160 }}>
-        {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
-        {emptyResult && (
-          <span style={{ color: 'var(--muted)', fontStyle: 'italic', marginLeft: 8 }}>
-            — no noteworthy updates found, left for next time
-          </span>
-        )}
-      </span>
-      <select value={lane} onChange={e => setLane(e.target.value)}
-        style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
-        {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-      </select>
-      <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={working} onClick={interpret}>
-        {working ? 'Interpreting…' : 'Interpret'}
-      </button>
+    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, overflow: 'hidden', animation: 'slideUp .2s ease both' }}>
+      <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', cursor: 'pointer' }}
+        onClick={() => setExpanded(e => !e)}>
+        <Icon name="slack" size={17} color="var(--purple)" />
+        <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, minWidth: 160 }}>
+          {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
+          {emptyResult && (
+            <span style={{ color: 'var(--muted)', fontStyle: 'italic', marginLeft: 8 }}>
+              — no noteworthy updates found, left for next time
+            </span>
+          )}
+        </span>
+        <select value={lane} onChange={e => setLane(e.target.value)} onClick={e => e.stopPropagation()}
+          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
+          {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={working}
+          onClick={e => { e.stopPropagation(); interpret(); }}>
+          {working ? 'Interpreting…' : 'Interpret'}
+        </button>
+        <Icon name="chevDown" size={14} color="var(--muted)"
+          style={{ flex: '0 0 auto', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '0 15px 14px', borderTop: '1px solid #7F77DD1a' }}>
+          <SlackMessageLog messages={messages} />
+        </div>
+      )}
     </div>
   );
 }

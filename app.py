@@ -564,11 +564,29 @@ def create_app():
 
     @app.route('/api/inbox/slack/pending')
     def slack_pending():
-        rows = (db.session.query(SlackMessage.channel, db.func.count(SlackMessage.id))
-                .filter(SlackMessage.processed == False)
-                .group_by(SlackMessage.channel)
-                .all())
-        return jsonify([{'channel': c, 'count': n} for c, n in rows])
+        channels = (db.session.query(SlackMessage.channel)
+                    .filter(SlackMessage.processed == False)
+                    .group_by(SlackMessage.channel)
+                    .all())
+
+        def fmt_time(dt):
+            return dt.strftime('%I:%M %p').lstrip('0')
+
+        result = []
+        for (channel,) in channels:
+            messages = (SlackMessage.query
+                        .filter_by(channel=channel, processed=False)
+                        .order_by(SlackMessage.ts)
+                        .all())
+            result.append({
+                'channel': channel,
+                'count': len(messages),
+                'messages': [
+                    {'name': m.display_name, 'time': fmt_time(m.ts), 'text': m.text}
+                    for m in messages
+                ],
+            })
+        return jsonify(result)
 
     @app.route('/api/inbox/slack/interpret', methods=['POST'])
     def interpret_slack():
