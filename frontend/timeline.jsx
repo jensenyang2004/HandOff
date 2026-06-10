@@ -746,7 +746,8 @@ function AddBranchModal({ onClose, onRefresh }) {
 }
 
 // ── Parsed node preview card (shared with personal-log via window global) ──
-function ParsedNodeCard({ node, onRemove }) {
+// ── Parsed node preview card (shared with personal-log via window global) ──
+function ParsedNodeCard({ node, onChange, onRemove }) {
   const { TYPE_META } = window.HANDOFF;
   const typeMap = { idea: 'experiment', link: 'reference' };
   const frontType = typeMap[node.type] || node.type;
@@ -763,49 +764,335 @@ function ParsedNodeCard({ node, onRemove }) {
   const attendees    = meta.attendees;
   const outcome      = meta.outcome;
 
+  // Local state for editing
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(title || '');
+  const [editBody, setEditBody] = useState(body || '');
+  const [editNote, setEditNote] = useState(note || '');
+  const [editRationale, setEditRationale] = useState(rationale || '');
+  const [editAlternatives, setEditAlternatives] = useState(alternatives || '');
+  const [editAttendees, setEditAttendees] = useState(attendees || '');
+  const [editOutcome, setEditOutcome] = useState(outcome || '');
+
+  // Keep track of values if prop changes
+  useEffect(() => {
+    setEditTitle(title || '');
+    setEditBody(body || '');
+    setEditNote(note || '');
+    setEditRationale(rationale || '');
+    setEditAlternatives(alternatives || '');
+    setEditAttendees(attendees || '');
+    setEditOutcome(outcome || '');
+  }, [title, body, note, rationale, alternatives, attendees, outcome]);
+
+  const isSelected = node.selected !== false;
+
+  const toggleSelect = (e) => {
+    e.stopPropagation();
+    if (onChange) {
+      onChange({ ...node, selected: !isSelected });
+    }
+  };
+
+  const handleSave = (e) => {
+    e.stopPropagation();
+    if (onChange) {
+      const updatedMeta = { ...meta };
+      if (meta.title !== undefined || node.content) updatedMeta.title = editTitle;
+      if (meta.body !== undefined) updatedMeta.body = editBody;
+      if (meta.note !== undefined) updatedMeta.note = editNote;
+      if (meta.rationale !== undefined) updatedMeta.rationale = editRationale;
+      if (meta.alternatives !== undefined) updatedMeta.alternatives = editAlternatives;
+      if (meta.attendees !== undefined) updatedMeta.attendees = editAttendees;
+      if (meta.outcome !== undefined) updatedMeta.outcome = editOutcome;
+
+      onChange({
+        ...node,
+        content: editTitle,
+        metadata: updatedMeta
+      });
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = (e) => {
+    e.stopPropagation();
+    setEditTitle(title || '');
+    setEditBody(body || '');
+    setEditNote(note || '');
+    setEditRationale(rationale || '');
+    setEditAlternatives(alternatives || '');
+    setEditAttendees(attendees || '');
+    setEditOutcome(outcome || '');
+    setIsEditing(false);
+  };
+
   return (
-    <div style={{ display: 'flex', gap: 10, padding: '11px 13px', background: 'var(--bg)', border: `1px solid ${m.color}33`, borderRadius: 8 }}>
-      <span style={{ color: m.color, display: 'inline-flex', flex: '0 0 auto', marginTop: 2 }}><Icon name={m.glyph} size={15} /></span>
+    <div style={{
+      display: 'flex',
+      gap: 10,
+      padding: '11px 13px',
+      background: isSelected ? 'var(--bg)' : 'rgba(0, 0, 0, 0.15)',
+      border: isSelected ? `1px solid ${m.color}33` : '1px solid rgba(255, 255, 255, 0.05)',
+      borderRadius: 8,
+      opacity: isSelected ? 1 : 0.45,
+      transition: 'all 0.2s ease',
+    }}>
+      {/* Checkbox for Keep/Discard Selection */}
+      {onChange && (
+        <div
+          onClick={toggleSelect}
+          style={{
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 18,
+            height: 18,
+            borderRadius: 4,
+            border: `1.5px solid ${isSelected ? m.color : 'rgba(255, 255, 255, 0.25)'}`,
+            background: isSelected ? `${m.color}22` : 'transparent',
+            color: m.color,
+            marginTop: 2,
+            flexShrink: 0,
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {isSelected && <Icon name="check" size={12} color={m.color} />}
+        </div>
+      )}
+
+      {/* Glyph icon */}
+      <span style={{ color: isSelected ? m.color : 'var(--muted)', display: 'inline-flex', flex: '0 0 auto', marginTop: 2 }}>
+        <Icon name={m.glyph} size={15} />
+      </span>
+
+      {/* Card Content / Form */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4, flexWrap: 'wrap' }}>
-          <Pill color={m.color} style={{ fontSize: 10.5 }}>{refKind || m.label}</Pill>
-          {hash   && <span className="mono" style={{ fontSize: 11, color: 'var(--teal)' }}>{hash}</span>}
-          {metric && metric !== 'pending' && <span className="mono" style={{ fontSize: 11, color: 'var(--amber)' }}>{metric}</span>}
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4, marginBottom: body || note ? 5 : 0 }}>
-          {title}
-        </div>
-        {body && (
-          <div style={{ fontSize: 12, color: 'var(--muted-2)', lineHeight: 1.55, marginBottom: note || rationale || attendees ? 4 : 0 }}>{body}</div>
-        )}
-        {rationale && (
-          <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
-            <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Why: </span>{rationale}
+        {isEditing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2 }}>
+            <div>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Title/Content</span>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  padding: '5px 8px',
+                  color: 'var(--text)',
+                  fontSize: 13,
+                  outline: 'none',
+                  marginTop: 2
+                }}
+              />
+            </div>
+
+            {body !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Body</span>
+                <textarea
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    minHeight: 50,
+                    outline: 'none',
+                    marginTop: 2,
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            )}
+
+            {note !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Note</span>
+                <textarea
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    minHeight: 50,
+                    outline: 'none',
+                    marginTop: 2,
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            )}
+
+            {rationale !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Why (Rationale)</span>
+                <input
+                  type="text"
+                  value={editRationale}
+                  onChange={(e) => setEditRationale(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    outline: 'none',
+                    marginTop: 2
+                  }}
+                />
+              </div>
+            )}
+
+            {alternatives !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Alternatives</span>
+                <input
+                  type="text"
+                  value={editAlternatives}
+                  onChange={(e) => setEditAlternatives(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    outline: 'none',
+                    marginTop: 2
+                  }}
+                />
+              </div>
+            )}
+
+            {attendees !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>With (Attendees)</span>
+                <input
+                  type="text"
+                  value={editAttendees}
+                  onChange={(e) => setEditAttendees(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    outline: 'none',
+                    marginTop: 2
+                  }}
+                />
+              </div>
+            )}
+
+            {outcome !== undefined && (
+              <div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Outcome</span>
+                <input
+                  type="text"
+                  value={editOutcome}
+                  onChange={(e) => setEditOutcome(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    outline: 'none',
+                    marginTop: 2
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11, height: 'auto' }} onClick={handleCancel}>Cancel</button>
+              <button className="btn btn-primary" style={{ padding: '4px 8px', fontSize: 11, height: 'auto' }} onClick={handleSave}>Done</button>
+            </div>
           </div>
-        )}
-        {alternatives && (
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', lineHeight: 1.4, marginBottom: 3 }}>
-            <span style={{ fontStyle: 'normal', fontWeight: 600 }}>Alt: </span>{alternatives}
-          </div>
-        )}
-        {attendees && (
-          <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
-            <span style={{ color: 'var(--muted)', fontWeight: 600 }}>With: </span>{attendees}
-          </div>
-        )}
-        {outcome && (
-          <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
-            <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Outcome: </span>{outcome}
-          </div>
-        )}
-        {note && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', fontStyle: 'italic' }}>"{note}"</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4, flexWrap: 'wrap' }}>
+              <Pill color={m.color} style={{ fontSize: 10.5 }}>{refKind || m.label}</Pill>
+              {hash   && <span className="mono" style={{ fontSize: 11, color: 'var(--teal)' }}>{hash}</span>}
+              {metric && metric !== 'pending' && <span className="mono" style={{ fontSize: 11, color: 'var(--amber)' }}>{metric}</span>}
+            </div>
+            <div style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--text)',
+              lineHeight: 1.4,
+              marginBottom: body || note ? 5 : 0,
+              textDecoration: isSelected ? 'none' : 'line-through'
+            }}>
+              {title}
+            </div>
+            {body && (
+              <div style={{ fontSize: 12, color: 'var(--muted-2)', lineHeight: 1.55, marginBottom: note || rationale || attendees ? 4 : 0 }}>{body}</div>
+            )}
+            {rationale && (
+              <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Why: </span>{rationale}
+              </div>
+            )}
+            {alternatives && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', lineHeight: 1.4, marginBottom: 3 }}>
+                <span style={{ fontStyle: 'normal', fontWeight: 600 }}>Alt: </span>{alternatives}
+              </div>
+            )}
+            {attendees && (
+              <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>With: </span>{attendees}
+              </div>
+            )}
+            {outcome && (
+              <div style={{ fontSize: 11, color: 'var(--muted-2)', lineHeight: 1.4, marginBottom: 3 }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Outcome: </span>{outcome}
+              </div>
+            )}
+            {note && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontStyle: 'italic' }}>"{note}"</div>
+            )}
+          </>
         )}
       </div>
-      {onRemove && (
-        <button className="btn btn-ghost btn-icon" style={{ padding: 4, flex: '0 0 auto', alignSelf: 'flex-start' }} onClick={onRemove}>
-          <Icon name="close" size={13} color="var(--muted-2)" />
-        </button>
+
+      {/* Edit and Remove action buttons */}
+      {!isEditing && (
+        <div style={{ display: 'flex', gap: 4, flex: '0 0 auto', alignSelf: 'flex-start' }}>
+          {onChange && (
+            <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}>
+              <Icon name="edit" size={13} color="var(--muted-2)" />
+            </button>
+          )}
+          {onRemove && (
+            <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); onRemove(); }}>
+              <Icon name="close" size={13} color="var(--muted-2)" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -813,7 +1100,7 @@ function ParsedNodeCard({ node, onRemove }) {
 window.ParsedNodeCard = ParsedNodeCard;
 
 // ── Free-form add modal (AI parsing) ─────────────────────────────────────
-function FreeformModal({ initialLaneId, onClose, onRefresh }) {
+function FreeformModal({ initialLaneId, originRect, onClose, onRefresh }) {
   const { LANES, CURRENT_USER, CONTACTS, ENTRIES } = window.HANDOFF;
   const [text, setText] = useState('');
   const [laneId, setLaneId] = useState(initialLaneId || LANES[0]?.id || '');
@@ -825,6 +1112,12 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const textareaRef = useRef(null);
   const [mentionPos, setMentionPos] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const overlayRef = useRef(null);
+  const modalRef = useRef(null);
+  const contentRef = useRef(null);
+
   useEffect(() => {
     if (mention !== null && textareaRef.current) {
       const r = textareaRef.current.getBoundingClientRect();
@@ -833,6 +1126,74 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
       setMentionPos(null);
     }
   }, [mention]);
+
+  useEffect(() => {
+    if (originRect && modalRef.current) {
+      const modalContainer = modalRef.current;
+      const fader = contentRef.current;
+      const overlay = overlayRef.current;
+
+      const modalRect = modalContainer.getBoundingClientRect();
+      const scaleX = originRect.width / modalRect.width;
+      const scaleY = originRect.height / modalRect.height;
+      const deltaX = (originRect.left + originRect.width / 2) - (window.innerWidth / 2);
+      const deltaY = (originRect.top + originRect.height / 2) - (window.innerHeight / 2);
+
+      modalContainer.style.transition = 'none';
+      modalContainer.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px)) scale(${scaleX}, ${scaleY})`;
+      modalContainer.style.borderRadius = '12px'; 
+      modalContainer.style.opacity = '0.3';
+      if (fader) fader.style.opacity = '0';
+      if (overlay) overlay.style.opacity = '0';
+
+      void modalContainer.offsetWidth;
+
+      requestAnimationFrame(() => {
+        if (overlay) overlay.style.opacity = '1';
+        modalContainer.style.transition = 'transform 0.5s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.4s ease, border-radius 0.5s cubic-bezier(0.19, 1, 0.22, 1)';
+        modalContainer.style.transform = 'translate(-50%, -50%) scale(1)';
+        modalContainer.style.borderRadius = '20px';
+        modalContainer.style.opacity = '1';
+        if (fader) {
+          fader.style.transition = 'opacity 0.25s ease 0.1s';
+          fader.style.opacity = '1';
+        }
+      });
+    }
+  }, []);
+
+  const close = () => {
+    if (modalRef.current && originRect) {
+      const modalContainer = modalRef.current;
+      const fader = contentRef.current;
+      const overlay = overlayRef.current;
+
+      const modalRect = modalContainer.getBoundingClientRect();
+      const scaleX = originRect.width / modalRect.width;
+      const scaleY = originRect.height / modalRect.height;
+      const deltaX = (originRect.left + originRect.width / 2) - (window.innerWidth / 2);
+      const deltaY = (originRect.top + originRect.height / 2) - (window.innerHeight / 2);
+
+      if (fader) {
+        fader.style.transition = 'opacity 0.15s ease';
+        fader.style.opacity = '0';
+      }
+      if (overlay) {
+        overlay.style.transition = 'opacity 0.45s ease';
+        overlay.style.opacity = '0';
+      }
+
+      modalContainer.style.transition = 'transform 0.45s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.4s ease, border-radius 0.45s cubic-bezier(0.19, 1, 0.22, 1)';
+      modalContainer.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px)) scale(${scaleX}, ${scaleY})`;
+      modalContainer.style.borderRadius = '12px';
+      modalContainer.style.opacity = '0';
+    }
+
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 450);
+  };
 
   const selectedLane = LANES.find(l => l.id === laneId);
   const expanded = parsing || parsed.length > 0;
@@ -892,7 +1253,7 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
   const handleKeyDown = (e) => {
     if (mention && mentionItems.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, mentionItems.length - 1)); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx(i => Math.max(i - 0, 0)); return; }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectMention(mentionItems[activeIdx]); return; }
       if (e.key === 'Escape')    { setMention(null); return; }
     }
@@ -903,7 +1264,7 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
     setParsing(true); setError(null); setParsed([]);
     try {
       const result = await API.parseLog(selectedLane.dbId, text);
-      setParsed(Array.isArray(result) ? result : []);
+      setParsed(Array.isArray(result) ? result.map(n => ({ ...n, selected: true })) : []);
     } catch {
       setError('Parse failed — check backend connection.');
     }
@@ -911,9 +1272,10 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
   };
 
   const confirm = async () => {
-    if (!selectedLane || saving || !parsed.length) return;
+    const activeNodes = parsed.filter(n => n.selected !== false);
+    if (!selectedLane || saving || !activeNodes.length) return;
     setSaving(true);
-    for (const node of parsed) {
+    for (const node of activeNodes) {
       await API.addNode(selectedLane.dbId, {
         type: node.type,
         content: node.content || (node.metadata || {}).title || 'Untitled',
@@ -924,7 +1286,7 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
     }
     setSaving(false);
     onRefresh();
-    onClose();
+    close();
   };
 
   const inp = { padding: '8px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
@@ -932,121 +1294,119 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.5)' }} />
-      <div className="pop-in" style={{
-        position: 'fixed', inset: 0, margin: 'auto',
-        width: expanded ? 860 : 560, maxWidth: 'calc(100vw - 40px)', height: '78vh', zIndex: 71,
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 14, boxShadow: '0 30px 80px rgba(0,0,0,.65)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        transition: 'width .32s cubic-bezier(.2,.8,.2,1)',
-      }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '15px 18px', borderBottom: '1px solid var(--border-soft)', flex: '0 0 auto' }}>
-          <Icon name="sparkle" size={16} color="var(--purple)" />
-          <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Free log</span>
-          {parsed.length > 0 && !parsing && (
-            <Pill color="var(--purple)">{parsed.length} node{parsed.length !== 1 ? 's' : ''} parsed</Pill>
-          )}
-          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={onClose}>
-            <Icon name="close" size={15} color="var(--muted-2)" />
-          </button>
-        </div>
+      <div ref={overlayRef} className="liquid-glass-overlay">
+        <div onClick={close} style={{ position: 'absolute', inset: 0 }} />
+        <div ref={modalRef} className="liquid-glass-modal" style={{ width: expanded ? 860 : 560, maxWidth: 'calc(100vw - 40px)', height: '78vh', transition: 'width .32s cubic-bezier(.2,.8,.2,1)', padding: '0px' }}>
+          <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, opacity: 0, padding: '20px 24px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingBottom: '12px', borderBottom: '1px solid var(--border-soft)', flex: '0 0 auto' }}>
+              <Icon name="sparkle" size={16} color="var(--purple)" />
+              <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Free log</span>
+              {parsed.length > 0 && !parsing && (
+                <Pill color="var(--purple)">{parsed.filter(n => n.selected !== false).length} of {parsed.length} selected</Pill>
+              )}
+              <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={close}>
+                <Icon name="close" size={15} color="var(--muted-2)" />
+              </button>
+            </div>
 
-        {/* Body — split layout */}
-        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+            {/* Body — split layout */}
+            <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', marginTop: '16px' }}>
 
-          {/* Left: compose */}
-          <div style={{
-            flex: expanded ? '0 0 440px' : '1',
-            display: 'flex', flexDirection: 'column',
-            padding: '16px 18px',
-            borderRight: expanded ? '1px solid var(--border-soft)' : 'none',
-            minWidth: 0, overflow: 'hidden',
-          }}>
-            {/* Branch picker */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flex: '0 0 auto' }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Branch</span>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <select value={laneId} onChange={e => setLaneId(e.target.value)}
-                  style={{ ...inp, appearance: 'none', paddingRight: 28, width: '100%' }}
-                  disabled={parsing}>
-                  {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-                <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                  <Icon name="chevDown" size={12} color="var(--muted)" />
-                </span>
+              {/* Left: compose */}
+              <div style={{
+                flex: expanded ? '0 0 400px' : '1',
+                display: 'flex', flexDirection: 'column',
+                borderRight: expanded ? '1px solid var(--border-soft)' : 'none',
+                minWidth: 0, overflow: 'hidden',
+                paddingRight: expanded ? '16px' : '0px'
+              }}>
+                {/* Branch picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flex: '0 0 auto' }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Branch</span>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <select value={laneId} onChange={e => setLaneId(e.target.value)}
+                      style={{ ...inp, appearance: 'none', paddingRight: 28, width: '100%' }}
+                      disabled={parsing}>
+                      {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                    <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                      <Icon name="chevDown" size={12} color="var(--muted)" />
+                    </span>
+                  </div>
+                  {selectedLane?.ai_context && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--purple)', flex: '0 0 auto' }}>
+                      <Icon name="sparkle" size={11} color="var(--purple)" /> context
+                    </div>
+                  )}
+                </div>
+
+                {/* Textarea */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <textarea
+                    ref={textareaRef}
+                    value={text}
+                    onChange={handleTextChange}
+                    onKeyDown={handleKeyDown}
+                    onClick={e => {
+                      const before = text.slice(0, e.target.selectionStart);
+                      const m = before.match(/@(\w*)$/);
+                      setMention(m ? { query: m[1], start: e.target.selectionStart - m[0].length, end: e.target.selectionStart } : null);
+                    }}
+                    autoFocus
+                    disabled={parsing}
+                    placeholder={'Paste anything — commits, results, decisions, meeting notes.\n\nType @ to mention a contact or commit.'}
+                    style={textareaStyle}
+                  />
+
+                  {error && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>{error}</div>}
+                </div>
               </div>
-              {selectedLane?.ai_context && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--purple)', flex: '0 0 auto' }}>
-                  <Icon name="sparkle" size={11} color="var(--purple)" /> context
+
+              {/* Right: AI output */}
+              {expanded && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', paddingLeft: '16px' }}>
+                  {parsing ? (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }}>
+                      <div style={{ width: 28, height: 28, border: '2.5px solid var(--border)', borderTopColor: 'var(--purple)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
+                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>Parsing with Gemini…</span>
+                    </div>
+                  ) : (
+                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+                      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', marginBottom: 12 }}>
+                        {parsed.length === 0 ? 'All nodes removed' : `${parsed.filter(n => n.selected !== false).length} selected of ${parsed.length}`}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {parsed.map((node, i) => (
+                          <ParsedNodeCard key={i} node={node}
+                            onChange={(updatedNode) => setParsed(prev => prev.map((item, idx) => idx === i ? updatedNode : item))}
+                            onRemove={() => setParsed(n => n.filter((_, j) => j !== i))} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Textarea */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={handleTextChange}
-                onKeyDown={handleKeyDown}
-                onClick={e => {
-                  const before = text.slice(0, e.target.selectionStart);
-                  const m = before.match(/@(\w*)$/);
-                  setMention(m ? { query: m[1], start: e.target.selectionStart - m[0].length, end: e.target.selectionStart } : null);
-                }}
-                autoFocus
-                disabled={parsing}
-                placeholder={'Paste anything — commits, results, decisions, meeting notes.\n\nType @ to mention a contact or commit.'}
-                style={textareaStyle}
-              />
-
-              {error && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>{error}</div>}
+            {/* Footer */}
+            <div style={{ display: 'flex', gap: 9, paddingTop: '12px', borderTop: '1px solid var(--border-soft)', flex: '0 0 auto', alignItems: 'center', marginTop: '16px' }}>
+              {parsed.length > 0 && !parsing && (
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>Re-parse will replace results</span>
+              )}
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-ghost" onClick={close}>Cancel</button>
+              <button className="btn" onClick={parse} disabled={!text.trim() || parsing} style={{ opacity: parsing ? 0.7 : 1 }}>
+                <Icon name="sparkle" size={14} color="var(--purple)" />
+                {parsing ? ' Parsing…' : parsed.length > 0 ? ' Re-parse' : ' Parse →'}
+              </button>
+              {parsed.length > 0 && !parsing && (
+                <button className="btn btn-primary" onClick={confirm} disabled={saving || parsed.filter(n => n.selected !== false).length === 0}>
+                  {saving ? 'Adding…' : `Add ${parsed.filter(n => n.selected !== false).length} entr${parsed.filter(n => n.selected !== false).length !== 1 ? 'ies' : 'y'} →`}
+                </button>
+              )}
             </div>
           </div>
-
-          {/* Right: AI output */}
-          {expanded && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-              {parsing ? (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }}>
-                  <div style={{ width: 28, height: 28, border: '2.5px solid var(--border)', borderTopColor: 'var(--purple)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
-                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>Parsing with Gemini…</span>
-                </div>
-              ) : (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
-                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', marginBottom: 12 }}>
-                    {parsed.length === 0 ? 'All nodes removed' : `${parsed.length} node${parsed.length !== 1 ? 's' : ''} — click × to remove`}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {parsed.map((node, i) => (
-                      <ParsedNodeCard key={i} node={node}
-                        onRemove={() => setParsed(n => n.filter((_, j) => j !== i))} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ display: 'flex', gap: 9, padding: '12px 18px', borderTop: '1px solid var(--border-soft)', flex: '0 0 auto', alignItems: 'center' }}>
-          {parsed.length > 0 && !parsing && (
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>Re-parse will replace results</span>
-          )}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={parse} disabled={!text.trim() || parsing} style={{ opacity: parsing ? 0.7 : 1 }}>
-            <Icon name="sparkle" size={14} color="var(--purple)" />
-            {parsing ? ' Parsing…' : parsed.length > 0 ? ' Re-parse' : ' Parse →'}
-          </button>
-          {parsed.length > 0 && !parsing && (
-            <button className="btn btn-primary" onClick={confirm} disabled={saving || parsed.length === 0}>
-              {saving ? 'Adding…' : `Add ${parsed.length} entr${parsed.length !== 1 ? 'ies' : 'y'} →`}
-            </button>
-          )}
         </div>
       </div>
 
@@ -1099,7 +1459,7 @@ function TimelineToolbar({ onGenerateHandover, onAddBranch, onFreeLog, onLinkDec
   const toggle = (t) => setFilters(prev => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 22px', height: 48, borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 22px', height: 48, borderBottom: '1px solid var(--border)', flex: '0 0 auto', overflowX: 'auto', overflowY: 'hidden' }}>
       {/* Legend */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {Object.entries(TYPE_META).map(([k, m]) => (
@@ -2127,7 +2487,7 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
       <TimelineToolbar
         onGenerateHandover={onGenerateHandover}
         onAddBranch={() => setAddBranch(true)}
-        onFreeLog={() => setFreeLog({})}
+        onFreeLog={(e) => setFreeLog({ originRect: e.currentTarget.getBoundingClientRect() })}
         onLinkDecisions={handleLinkDecisions}
         linking={linking}
         viewMode={viewMode}
@@ -2176,7 +2536,7 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
       />
 
       {selectedLink && <LinkDrawer link={selectedLink} onClose={() => setSelectedLink(null)} onRefresh={() => { setSelectedLink(null); onRefresh(); }} />}
-      {freeLog !== null && <FreeformModal initialLaneId={freeLog.laneId} onClose={() => setFreeLog(null)} onRefresh={() => { setFreeLog(null); onRefresh(); }} />}
+      {freeLog !== null && <FreeformModal initialLaneId={freeLog.laneId} originRect={freeLog.originRect} onClose={() => setFreeLog(null)} onRefresh={() => { setFreeLog(null); onRefresh(); }} />}
       {quickAdd && <CreateTaskModal pos={quickAdd} lane={quickAdd.lane} onClose={() => setQuickAdd(null)} onRefresh={() => { setQuickAdd(null); onRefresh(); }} />}
       {selected && <EntryDrawer e={selected} onClose={closeDrawer} onRefresh={onRefresh} />}
       {selectedTask && <TaskDrawer task={selectedTask} onClose={() => setSelectedTask(null)} onRefresh={() => { setSelectedTask(null); onRefresh(); }} />}
