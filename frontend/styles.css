@@ -139,6 +139,18 @@ input, textarea { font-family: inherit; }
   opacity: 0;
 }
 
+.liquid-glass-overlay:not(.closing) {
+  opacity: 1;
+}
+
+.liquid-glass-modal.opening {
+  animation: expandFromCard 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+.liquid-glass-modal.closing {
+  animation: shrinkToCard 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
 .glass-card-hover {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
