@@ -1,5 +1,5 @@
 // timeline.jsx — Screen 1: horizontal railway-map timeline
-const { useState, useRef, useMemo, useEffect } = React;
+const { useState, useRef, useMemo, useEffect, useCallback } = React;
 
 // Shared spread algorithm: spaces items with minimum 3% gap, returns { id → adjustedFrac, startF, endF }
 function spreadFracs(items) {
@@ -1170,30 +1170,149 @@ function TimelineToolbar({ onGenerateHandover, onAddBranch, onFreeLog, onLinkDec
 }
 
 // ── Scrubber ──────────────────────────────────────────────────────────────
-function Scrubber() {
-  const { WIN_START, WIN_END, fmtDate } = window.HANDOFF;
+function Scrubber({ totalStart, totalEnd, viewStart, viewEnd, onChange, labelW = 176 }) {
+  const { fmtDate } = window.HANDOFF;
+  const trackRef = useRef(null);
+
+  // Calculate percentages
+  const totalDuration = totalEnd.getTime() - totalStart.getTime();
+  const leftPct = (viewStart.getTime() - totalStart.getTime()) / totalDuration;
+  const rightPct = (viewEnd.getTime() - totalStart.getTime()) / totalDuration;
+
+  const leftStr = `${Math.max(0, Math.min(100, leftPct * 100))}%`;
+  const rightStr = `${Math.max(0, Math.min(100, (1 - rightPct) * 100))}%`;
+
+  // Draw ticks based on the total range
   const ticks = [];
-  for (let i = 0; i <= 6; i++) ticks.push(new Date(WIN_START.getTime() + (i / 6) * (WIN_END - WIN_START)));
+  for (let i = 0; i <= 6; i++) {
+    ticks.push(new Date(totalStart.getTime() + (i / 6) * totalDuration));
+  }
+
+  // Handle dragging
+  const handleMouseDown = (type, e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startLeftPct = leftPct;
+    const startRightPct = rightPct;
+    const trackWidth = trackRef.current.getBoundingClientRect().width;
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaPct = deltaX / trackWidth;
+
+      let newLeftPct = startLeftPct;
+      let newRightPct = startRightPct;
+
+      const minDiffPct = 0.02; // Prevent collapsing to less than 2% of total width
+
+      if (type === 'left') {
+        newLeftPct = Math.max(0, Math.min(startRightPct - minDiffPct, startLeftPct + deltaPct));
+      } else if (type === 'right') {
+        newRightPct = Math.max(startLeftPct + minDiffPct, Math.min(1, startRightPct + deltaPct));
+      } else if (type === 'pan') {
+        const widthPct = startRightPct - startLeftPct;
+        newLeftPct = Math.max(0, Math.min(1 - widthPct, startLeftPct + deltaPct));
+        newRightPct = newLeftPct + widthPct;
+      }
+
+      const newViewStart = new Date(totalStart.getTime() + newLeftPct * totalDuration);
+      const newViewEnd = new Date(totalStart.getTime() + newRightPct * totalDuration);
+      onChange(newViewStart, newViewEnd);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   return (
-    <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--border)', padding: '10px 22px 12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7, paddingLeft: 176 }}>
-        {ticks.map((t, i) => <span key={i} style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>{fmtDate(t)}</span>)}
+    <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--border)', padding: '10px 22px 12px', userSelect: 'none' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7, paddingLeft: labelW }}>
+        {ticks.map((t, i) => (
+          <span key={i} style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+            {fmtDate(t)}
+          </span>
+        ))}
       </div>
-      <div style={{ position: 'relative', height: 30, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', padding: '0 2px', gap: 1 }}>
+      <div
+        ref={trackRef}
+        style={{
+          position: 'relative',
+          height: 30,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 7,
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', padding: '0 2px', gap: 1, pointerEvents: 'none' }}>
           {Array.from({ length: 60 }).map((_, i) => {
             const h = [4,6,5,8,7,10,6,5,9,12,8,7,5,4,6,9,11,7,6,5,8,10,7,6,4,5,7,9,6,5,8,11,9,7,6,5,4,6,8,10,12,9,7,6,5,7,9,11,8,6,5,4,6,8,10,13,11,9,7,5][i] || 4;
             return <div key={i} style={{ flex: 1, height: h, background: '#34343f', borderRadius: 1 }} />;
           })}
         </div>
-        <div style={{ position: 'absolute', left: '2%', right: '2%', top: 0, bottom: 0, border: '1.5px solid var(--purple)', borderRadius: 6, background: '#7F77DD12' }}>
-          <div style={{ position: 'absolute', left: -1, top: '50%', transform: 'translateY(-50%)', width: 4, height: 16, background: 'var(--purple)', borderRadius: 2 }} />
-          <div style={{ position: 'absolute', right: -1, top: '50%', transform: 'translateY(-50%)', width: 4, height: 16, background: 'var(--purple)', borderRadius: 2 }} />
+        <div
+          onMouseDown={(e) => handleMouseDown('pan', e)}
+          style={{
+            position: 'absolute',
+            left: leftStr,
+            right: rightStr,
+            top: 0,
+            bottom: 0,
+            border: '1.5px solid var(--purple)',
+            borderRadius: 6,
+            background: '#7F77DD12',
+            cursor: 'grab'
+          }}
+        >
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              handleMouseDown('left', e);
+            }}
+            style={{
+              position: 'absolute',
+              left: -2,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 5,
+              height: 18,
+              background: 'var(--purple)',
+              borderRadius: 3,
+              cursor: 'ew-resize',
+              zIndex: 10,
+              boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+            }}
+          />
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              handleMouseDown('right', e);
+            }}
+            style={{
+              position: 'absolute',
+              right: -2,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 5,
+              height: 18,
+              background: 'var(--purple)',
+              borderRadius: 3,
+              cursor: 'ew-resize',
+              zIndex: 10,
+              boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+            }}
+          />
         </div>
       </div>
     </div>
   );
 }
+
 
 // ── Single lane row ───────────────────────────────────────────────────────
 function Lane({ lane, style, filters, hiddenUsers, onSelect, onTaskSelect, onQuickAdd, onContextOpen, decisionFocus, viewMode, onNodeHover }) {
@@ -1873,7 +1992,38 @@ function LinkDrawer({ link, onClose, onRefresh }) {
 
 // ── Timeline screen ────────────────────────────────────────────────────────
 function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHandover, onRefresh }) {
-  const { LANES, ENTRIES, TASKS, LINKS, frac } = window.HANDOFF;
+  const { LANES, ENTRIES, TASKS, LINKS } = window.HANDOFF;
+  
+  const totalEnd = useMemo(() => window.HANDOFF.NOW || new Date(), []);
+  const oldestDate = useMemo(() => {
+    let minT = totalEnd.getTime() - 90 * 86400000; // default 90 days ago
+    [...ENTRIES, ...TASKS].forEach(item => {
+      if (item.date) {
+        const t = new Date(item.date).getTime();
+        if (t < minT) minT = t;
+      }
+    });
+    return new Date(minT - 2 * 86400000); // 2 days padding
+  }, [ENTRIES, TASKS, totalEnd]);
+
+  const [viewStart, setViewStart] = useState(() => {
+    const now = window.HANDOFF.NOW || new Date();
+    return new Date(now.getTime() - 30 * 86400000);
+  });
+  const [viewEnd, setViewEnd] = useState(() => {
+    return window.HANDOFF.NOW || new Date();
+  });
+
+  const frac = useCallback((iso) => {
+    const t = new Date(iso).getTime();
+    return Math.min(1, Math.max(0, (t - viewStart.getTime()) / (viewEnd.getTime() - viewStart.getTime())));
+  }, [viewStart, viewEnd]);
+
+  // Sync state back to window.HANDOFF so all children (Lanes, overlays, etc.) read the updated range
+  window.HANDOFF.WIN_START = viewStart;
+  window.HANDOFF.WIN_END = viewEnd;
+  window.HANDOFF.frac = frac;
+
   const [selected, setSelected] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [quickAdd, setQuickAdd] = useState(null);
@@ -1890,6 +2040,24 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
   const [selectedLink, setSelectedLink] = useState(null);
   const containerRef = useRef(null);
   const [containerW, setContainerW] = useState(1800);
+
+  const handleRangeChange = (r) => {
+    setRange(r);
+    const now = totalEnd;
+    if (r === '7D') {
+      setViewStart(new Date(now.getTime() - 7 * 86400000));
+      setViewEnd(now);
+    } else if (r === '30D') {
+      setViewStart(new Date(now.getTime() - 30 * 86400000));
+      setViewEnd(now);
+    } else if (r === '90D') {
+      setViewStart(new Date(now.getTime() - 90 * 86400000));
+      setViewEnd(now);
+    } else if (r === 'All') {
+      setViewStart(oldestDate);
+      setViewEnd(now);
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1909,7 +2077,7 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
       Object.assign(result, map);
     });
     return result;
-  }, [ENTRIES, TASKS, LANES]);
+  }, [ENTRIES, TASKS, LANES, frac]);
 
   const handleEntrySelect = (e) => {
     setSelected(e);
@@ -1964,7 +2132,7 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
         linking={linking}
         viewMode={viewMode}
         onToggleDecisionFlow={toggleDecisionFlow}
-        range={range} setRange={setRange}
+        range={range} setRange={handleRangeChange}
         filters={filters} setFilters={setFilters} />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -1994,7 +2162,18 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
         <TeamPanel hiddenUsers={hiddenUsers} onToggle={toggleUser} onRefresh={onRefresh} />
       </div>
 
-      <Scrubber />
+      <Scrubber
+        totalStart={oldestDate}
+        totalEnd={totalEnd}
+        viewStart={viewStart}
+        viewEnd={viewEnd}
+        onChange={(start, end) => {
+          setViewStart(start);
+          setViewEnd(end);
+          setRange(null);
+        }}
+        labelW={style.labelW}
+      />
 
       {selectedLink && <LinkDrawer link={selectedLink} onClose={() => setSelectedLink(null)} onRefresh={() => { setSelectedLink(null); onRefresh(); }} />}
       {freeLog !== null && <FreeformModal initialLaneId={freeLog.laneId} onClose={() => setFreeLog(null)} onRefresh={() => { setFreeLog(null); onRefresh(); }} />}

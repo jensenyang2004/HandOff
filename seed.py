@@ -30,7 +30,7 @@ def seed_if_empty():
     users = [
         User(id='jensen', name='Jensen Park', email='jensen@example.com',
              role='employee', color='#7F77DD', initials='JP', departing=True, last_day='Jun 6',
-             github_handle='jensen-park', slack_username='jensen', password_hash=_demo_pw),
+             github_handle='jensenyang2004', slack_username='jensen', password_hash=_demo_pw),
         User(id='maya', name='Maya Chen', email='maya@example.com',
              role='employee', color='#1D9E75', initials='MC',
              github_handle='maya-chen', slack_username='maya', password_hash=_demo_pw),
