@@ -746,8 +746,148 @@ function AddBranchModal({ onClose, onRefresh }) {
 }
 
 // ── Parsed node preview card (shared with personal-log via window global) ──
-function ParsedNodeCard({ node, onRemove }) {
+// ── Left-side panel for editing an AI-extracted node before it's saved ─────
+function EditNodeDrawer({ node, onClose, onSave }) {
   const { TYPE_META } = window.HANDOFF;
+  const typeMap = { idea: 'experiment', link: 'reference' };
+  const frontType = typeMap[node.type] || node.type;
+  const m = TYPE_META[frontType] || TYPE_META.note;
+  const meta = node.metadata || {};
+
+  const [content, setContent]         = useState(node.content || '');
+  const [title, setTitle]             = useState(meta.title || '');
+  const [body, setBody]               = useState(meta.body || '');
+  const [note, setNote]               = useState(meta.note || '');
+  const [hash, setHash]               = useState(meta.hash || '');
+  const [metric, setMetric]           = useState(meta.metric || '');
+  const [refKind, setRefKind]         = useState(meta.refKind || '');
+  const [rationale, setRationale]     = useState(meta.rationale || '');
+  const [alternatives, setAlternatives] = useState(meta.alternatives || '');
+  const [attendees, setAttendees]     = useState(meta.attendees || '');
+  const [outcome, setOutcome]         = useState(meta.outcome || '');
+
+  const fieldStyle = {
+    width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
+    padding: '8px 11px', color: 'var(--text)', fontSize: 13, outline: 'none', fontFamily: 'inherit',
+  };
+  const labelStyle = { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', marginBottom: 6, display: 'block' };
+
+  const save = () => {
+    const newMeta = { ...meta, title, body, note };
+    if (hash) newMeta.hash = hash; else delete newMeta.hash;
+    if (metric) newMeta.metric = metric; else delete newMeta.metric;
+    if (refKind) newMeta.refKind = refKind; else delete newMeta.refKind;
+    if (rationale) newMeta.rationale = rationale; else delete newMeta.rationale;
+    if (alternatives) newMeta.alternatives = alternatives; else delete newMeta.alternatives;
+    if (attendees) newMeta.attendees = attendees; else delete newMeta.attendees;
+    if (outcome) newMeta.outcome = outcome; else delete newMeta.outcome;
+    onSave({ ...node, content, metadata: newMeta });
+    onClose();
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 90, animation: 'fadeIn .15s ease both' }} />
+      <div style={{
+        position: 'absolute', top: 0, left: 0, bottom: 0, width: 408, zIndex: 91,
+        background: 'var(--surface)', borderRight: '1px solid var(--border)',
+        boxShadow: '18px 0 50px rgba(0,0,0,.5)', animation: 'slideInLeft .22s cubic-bezier(.2,.8,.2,1) both',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px', borderBottom: '1px solid var(--border-soft)' }}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, background: m.color + '1f', color: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name={m.glyph} size={16} />
+          </span>
+          <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: m.color }}>Edit {m.label.toLowerCase()}</div>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><Icon name="close" size={16} color="var(--muted-2)" /></button>
+        </div>
+
+        <div style={{ padding: '18px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Title</label>
+            <input style={fieldStyle} value={title} onChange={e => setTitle(e.target.value)} />
+          </div>
+
+          {node.type === 'link' && (
+            <div>
+              <label style={labelStyle}>URL</label>
+              <input style={fieldStyle} value={content} onChange={e => setContent(e.target.value)} />
+            </div>
+          )}
+
+          <div>
+            <label style={labelStyle}>Body</label>
+            <textarea style={{ ...fieldStyle, minHeight: 80, resize: 'vertical' }} value={body} onChange={e => setBody(e.target.value)} />
+          </div>
+
+          {(node.type === 'commit') && (
+            <div>
+              <label style={labelStyle}>Commit hash</label>
+              <input className="mono" style={fieldStyle} value={hash} onChange={e => setHash(e.target.value)} />
+            </div>
+          )}
+
+          {(node.type === 'commit' || node.type === 'idea') && (
+            <div>
+              <label style={labelStyle}>Metric</label>
+              <input style={fieldStyle} value={metric} onChange={e => setMetric(e.target.value)} placeholder="e.g. F1=0.91" />
+            </div>
+          )}
+
+          {node.type === 'link' && (
+            <div>
+              <label style={labelStyle}>Reference kind</label>
+              <select style={fieldStyle} value={refKind} onChange={e => setRefKind(e.target.value)}>
+                {['Paper', 'Repo', 'Article', 'Docs'].map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+          )}
+
+          {node.type === 'decision' && (
+            <>
+              <div>
+                <label style={labelStyle}>Why</label>
+                <textarea style={{ ...fieldStyle, minHeight: 60, resize: 'vertical' }} value={rationale} onChange={e => setRationale(e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>Alternatives considered</label>
+                <textarea style={{ ...fieldStyle, minHeight: 60, resize: 'vertical' }} value={alternatives} onChange={e => setAlternatives(e.target.value)} />
+              </div>
+            </>
+          )}
+
+          {node.type === 'meeting' && (
+            <>
+              <div>
+                <label style={labelStyle}>Attendees</label>
+                <input style={fieldStyle} value={attendees} onChange={e => setAttendees(e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>Outcome</label>
+                <textarea style={{ ...fieldStyle, minHeight: 60, resize: 'vertical' }} value={outcome} onChange={e => setOutcome(e.target.value)} />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label style={labelStyle}>Annotation</label>
+            <input style={fieldStyle} value={note} onChange={e => setNote(e.target.value)} placeholder="one-line note for teammates" />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, padding: '14px 18px', borderTop: '1px solid var(--border-soft)' }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Save</button>
+        </div>
+      </div>
+    </>
+  );
+}
+window.EditNodeDrawer = EditNodeDrawer;
+
+function ParsedNodeCard({ node, onRemove, onEdit }) {
+  const { TYPE_META } = window.HANDOFF;
+  const [editing, setEditing] = useState(false);
   const typeMap = { idea: 'experiment', link: 'reference' };
   const frontType = typeMap[node.type] || node.type;
   const m = TYPE_META[frontType] || TYPE_META.note;
@@ -802,10 +942,20 @@ function ParsedNodeCard({ node, onRemove }) {
           <div style={{ fontSize: 11.5, color: 'var(--muted)', fontStyle: 'italic' }}>"{note}"</div>
         )}
       </div>
-      {onRemove && (
-        <button className="btn btn-ghost btn-icon" style={{ padding: 4, flex: '0 0 auto', alignSelf: 'flex-start' }} onClick={onRemove}>
-          <Icon name="close" size={13} color="var(--muted-2)" />
-        </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 auto' }}>
+        {onEdit && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={() => setEditing(true)}>
+            <Icon name="edit" size={13} color="var(--muted-2)" />
+          </button>
+        )}
+        {onRemove && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={onRemove}>
+            <Icon name="close" size={13} color="var(--muted-2)" />
+          </button>
+        )}
+      </div>
+      {editing && (
+        <EditNodeDrawer node={node} onClose={() => setEditing(false)} onSave={updated => onEdit(updated)} />
       )}
     </div>
   );
@@ -1022,7 +1172,8 @@ function FreeformModal({ initialLaneId, onClose, onRefresh }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {parsed.map((node, i) => (
                       <ParsedNodeCard key={i} node={node}
-                        onRemove={() => setParsed(n => n.filter((_, j) => j !== i))} />
+                        onRemove={() => setParsed(n => n.filter((_, j) => j !== i))}
+                        onEdit={updated => setParsed(n => n.map((p, j) => j === i ? updated : p))} />
                     ))}
                   </div>
                 </div>

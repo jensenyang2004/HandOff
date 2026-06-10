@@ -263,7 +263,9 @@ function FreeLogSection({ onRefresh }) {
             {preview.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>All entries removed.</div>
             ) : preview.map((node, i) => (
-              <ParsedNodeCard key={i} node={node} onRemove={() => setPreview(p => p.filter((_, j) => j !== i))} />
+              <ParsedNodeCard key={i} node={node}
+                onRemove={() => setPreview(p => p.filter((_, j) => j !== i))}
+                onEdit={updated => setPreview(p => p.map((n, j) => j === i ? updated : n))} />
             ))}
           </div>
           <div style={{ display: 'flex', gap: 9 }}>
@@ -491,7 +493,9 @@ function GitBanner({ item, onDismiss, onRefresh }) {
             {nodes.length === 0
               ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
               : nodes.map((n, i) => (
-                  <ParsedNodeCard key={i} node={n} onRemove={() => setNodes(p => p.filter((_, j) => j !== i))} />
+                  <ParsedNodeCard key={i} node={n}
+                    onRemove={() => setNodes(p => p.filter((_, j) => j !== i))}
+                    onEdit={updated => setNodes(p => p.map((m, j) => j === i ? updated : m))} />
                 ))}
           </div>
         </div>
@@ -622,7 +626,9 @@ function SlackBanner({ item, onDismiss, onRefresh }) {
             {nodes.length === 0
               ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
               : nodes.map((n, i) => (
-                  <ParsedNodeCard key={i} node={n} onRemove={() => setNodes(p => p.filter((_, j) => j !== i))} />
+                  <ParsedNodeCard key={i} node={n}
+                    onRemove={() => setNodes(p => p.filter((_, j) => j !== i))}
+                    onEdit={updated => setNodes(p => p.map((m, j) => j === i ? updated : m))} />
                 ))}
           </div>
 
