@@ -88,12 +88,14 @@ class AIService:
         user_notes = branch.get('context_doc', '')
         existing = branch.get('ai_context', '')
         nodes_text = self.serialize_nodes_rich(nodes)
+        # Python <3.12 forbids backslashes inside f-string expressions
+        prev_doc = ('Previous context doc (update rather than replace if still accurate):\n' + existing) if existing else ''
 
         prompt = f"""You are generating a context document for a branch in the "{proj_name}" project.
 This document is consumed by an AI assistant as primary context for all tasks on this branch.
 {('Project context: ' + proj_ctx) if proj_ctx else ''}
 {('Team notes on this branch: ' + user_notes) if user_notes else ''}
-{('Previous context doc (update rather than replace if still accurate):\n' + existing) if existing else ''}
+{prev_doc}
 
 All entries on branch "{branch['name']}" (chronological, newest last):
 {nodes_text or '(no entries yet)'}
