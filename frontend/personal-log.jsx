@@ -643,12 +643,18 @@ function SlackPendingBanner({ pending, onInterpreted }) {
   const { LANES } = window.HANDOFF;
   const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
   const [working, setWorking] = useStatePL(false);
+  const [emptyResult, setEmptyResult] = useStatePL(false);
 
   const interpret = async () => {
     if (working || !lane) return;
     setWorking(true);
-    await API.interpretSlack(pending.channel, lane);
+    setEmptyResult(false);
+    const res = await API.interpretSlack(pending.channel, lane);
     setWorking(false);
+    if (res && res.ok && res.id == null) {
+      setEmptyResult(true);
+      return;
+    }
     onInterpreted();
   };
 
@@ -657,6 +663,11 @@ function SlackPendingBanner({ pending, onInterpreted }) {
       <Icon name="slack" size={17} color="var(--purple)" />
       <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, minWidth: 160 }}>
         {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
+        {emptyResult && (
+          <span style={{ color: 'var(--muted)', fontStyle: 'italic', marginLeft: 8 }}>
+            — no noteworthy updates found, left for next time
+          </span>
+        )}
       </span>
       <select value={lane} onChange={e => setLane(e.target.value)}
         style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>

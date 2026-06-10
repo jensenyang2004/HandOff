@@ -595,6 +595,11 @@ def create_app():
         project = Project.query.first()
         nodes = ai.parse_log(project.to_dict() if project else {}, branch.to_dict(), raw_text)
 
+        if not nodes:
+            # Not enough signal to extract anything — leave messages unprocessed
+            # so they carry over as context for the next interpret.
+            return jsonify({'ok': True, 'id': None, 'nodes': []}), 200
+
         suggestion = InboxSuggestion(
             source='slack',
             title=f"#{channel} · {len(messages)} messages",
