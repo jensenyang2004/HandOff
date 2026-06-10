@@ -599,21 +599,61 @@ function SlackBanner({ item, onDismiss, onRefresh }) {
   );
 }
 
+// ── Inbox: pending Slack messages banner (not yet interpreted) ──────────────
+function SlackPendingBanner({ pending, onInterpreted }) {
+  const { LANES } = window.HANDOFF;
+  const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
+  const [working, setWorking] = useStatePL(false);
+
+  const interpret = async () => {
+    if (working || !lane) return;
+    setWorking(true);
+    await API.interpretSlack(pending.channel, lane);
+    setWorking(false);
+    onInterpreted();
+  };
+
+  return (
+    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', animation: 'slideUp .2s ease both' }}>
+      <Icon name="slack" size={17} color="var(--purple)" />
+      <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, minWidth: 160 }}>
+        {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
+      </span>
+      <select value={lane} onChange={e => setLane(e.target.value)}
+        style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
+        {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
+      <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={working} onClick={interpret}>
+        {working ? 'Interpreting…' : 'Interpret'}
+      </button>
+    </div>
+  );
+}
+
 // ── Inbox section (fetches git + slack suggestions) ────────────────────────
 function InboxSection({ onRefresh }) {
   const [items, setItems] = useStatePL([]);
+  const [pending, setPending] = useStatePL([]);
 
-  useEffectPL(() => {
+  const refresh = () => {
     API.getInbox()
       .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => {});
-  }, []);
+    API.getSlackPending()
+      .then(data => setPending(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  };
+
+  useEffectPL(() => { refresh(); }, []);
 
   const dismiss = (id) => setItems(prev => prev.filter(item => item.id !== id));
-  if (!items.length) return null;
+  if (!items.length && !pending.length) return null;
 
   return (
     <div style={{ marginBottom: 4 }}>
+      {pending.map(p =>
+        <SlackPendingBanner key={p.channel} pending={p} onInterpreted={refresh} />
+      )}
       {items.map(item =>
         item.source === 'git'
           ? <GitBanner key={item.id} item={item} onDismiss={dismiss} onRefresh={onRefresh} />

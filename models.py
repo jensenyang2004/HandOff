@@ -180,6 +180,29 @@ class InboxSuggestion(db.Model):
         }
 
 
+class SlackMessage(db.Model):
+    __tablename__ = 'slack_message'
+    id = db.Column(db.Integer, primary_key=True)
+    channel = db.Column(db.String(100), nullable=False)
+    user_id = db.Column(db.String(50), db.ForeignKey('user.id'), nullable=True)
+    display_name = db.Column(db.String(200), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    ts = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    processed = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'channel': self.channel,
+            'user_id': self.user_id,
+            'display_name': self.display_name,
+            'text': self.text,
+            'ts': self.ts.isoformat(),
+            'processed': self.processed,
+        }
+
+
 class Node(db.Model):
     __tablename__ = 'node'
     id = db.Column(db.Integer, primary_key=True)
