@@ -409,6 +409,28 @@ def create_app():
         db.session.commit()
         return jsonify({'ok': True})
 
+    @app.route('/api/inbox/<int:item_id>/interpret', methods=['POST'])
+    def interpret_inbox(item_id):
+        item = InboxSuggestion.query.get_or_404(item_id)
+        data = request.get_json(silent=True) or {}
+        branch_slug = data.get('branch_slug') or item.branch_slug
+        branch = Branch.query.filter_by(slug=branch_slug).first_or_404()
+        project = Project.query.first()
+
+        # For git items, the deterministic commit node already carries the
+        # full commit message in metadata.body — that's richer than raw_text
+        # ("pushed by X to Y") and is what AI should parse.
+        existing_nodes = item.nodes
+        text = existing_nodes[0]['metadata'].get('body', '') if existing_nodes else item.raw_text
+        text = text or item.raw_text
+
+        nodes = ai.parse_log(project.to_dict() if project else {}, branch.to_dict(), text)
+
+        item.nodes_json = json.dumps(nodes)
+        item.branch_slug = branch_slug
+        db.session.commit()
+        return jsonify({'ok': True, 'nodes': nodes})
+
     # ── Webhooks ──────────────────────────────────────────────────────────────
     @app.route('/api/webhook/github', methods=['POST'])
     def webhook_github():
@@ -542,11 +564,29 @@ def create_app():
 
     @app.route('/api/inbox/slack/pending')
     def slack_pending():
-        rows = (db.session.query(SlackMessage.channel, db.func.count(SlackMessage.id))
-                .filter(SlackMessage.processed == False)
-                .group_by(SlackMessage.channel)
-                .all())
-        return jsonify([{'channel': c, 'count': n} for c, n in rows])
+        channels = (db.session.query(SlackMessage.channel)
+                    .filter(SlackMessage.processed == False)
+                    .group_by(SlackMessage.channel)
+                    .all())
+
+        def fmt_time(dt):
+            return dt.strftime('%I:%M %p').lstrip('0')
+
+        result = []
+        for (channel,) in channels:
+            messages = (SlackMessage.query
+                        .filter_by(channel=channel, processed=False)
+                        .order_by(SlackMessage.ts)
+                        .all())
+            result.append({
+                'channel': channel,
+                'count': len(messages),
+                'messages': [
+                    {'name': m.display_name, 'time': fmt_time(m.ts), 'text': m.text}
+                    for m in messages
+                ],
+            })
+        return jsonify(result)
 
     @app.route('/api/inbox/slack/interpret', methods=['POST'])
     def interpret_slack():
@@ -572,6 +612,11 @@ def create_app():
 
         project = Project.query.first()
         nodes = ai.parse_log(project.to_dict() if project else {}, branch.to_dict(), raw_text)
+
+        if not nodes:
+            # Not enough signal to extract anything — leave messages unprocessed
+            # so they carry over as context for the next interpret.
+            return jsonify({'ok': True, 'id': None, 'nodes': []}), 200
 
         suggestion = InboxSuggestion(
             source='slack',
