@@ -178,6 +178,14 @@ function FreeLogSection({ onRefresh }) {
   const [saving, setSaving] = useStatePL(false);
   const [error, setError] = useStatePL(null);
 
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   const parse = async () => {
     if (!text.trim() || !lane) return;
     const selectedLane = LANES.find(l => l.id === lane);
@@ -225,13 +233,15 @@ function FreeLogSection({ onRefresh }) {
 
   const close = () => {
     setIsClosing(true);
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       setOpen(false);
       setIsClosing(false);
       setText('');
       setPreview([]);
       setError(null);
       setPhase('input');
+      closeTimeoutRef.current = null;
     }, 280);
   };
 
@@ -485,6 +495,16 @@ function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) 
   const [isClosing, setIsClosing] = useStatePL(false);
   const [originRect, setOriginRect] = useStatePL(null);
 
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   const handleOpen = (e) => {
     if (isDropdown) {
       window.autoOpenInboxId = item.id;
@@ -500,7 +520,8 @@ function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) 
   useEffectPL(() => {
     if (!isDropdown && window.autoOpenInboxId === item.id) {
       window.autoOpenInboxId = null;
-      setTimeout(() => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
         const el = document.getElementById(`inbox-card-${item.id}`);
         if (el) {
           const rect = el.getBoundingClientRect();
@@ -508,15 +529,18 @@ function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) 
           setExpanded(true);
           setIsClosing(false);
         }
+        autoOpenTimeoutRef.current = null;
       }, 120);
     }
   }, [isDropdown, item.id]);
 
   const close = () => {
     setIsClosing(true);
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       setExpanded(false);
       setIsClosing(false);
+      closeTimeoutRef.current = null;
     }, 280);
   };
 
@@ -670,6 +694,16 @@ function SlackBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }
   const [saving, setSaving] = useStatePL(false);
   const messages = parseSlackMessages(item.raw_text);
 
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   const handleOpen = (e) => {
     if (isDropdown) {
       window.autoOpenInboxId = item.id;
@@ -685,7 +719,8 @@ function SlackBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }
   useEffectPL(() => {
     if (!isDropdown && window.autoOpenInboxId === item.id) {
       window.autoOpenInboxId = null;
-      setTimeout(() => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
         const el = document.getElementById(`inbox-card-${item.id}`);
         if (el) {
           const rect = el.getBoundingClientRect();
@@ -693,15 +728,18 @@ function SlackBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }
           setExpanded(true);
           setIsClosing(false);
         }
+        autoOpenTimeoutRef.current = null;
       }, 120);
     }
   }, [isDropdown, item.id]);
 
   const close = () => {
     setIsClosing(true);
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       setExpanded(false);
       setIsClosing(false);
+      closeTimeoutRef.current = null;
     }, 280);
   };
 
@@ -858,6 +896,16 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
   const [originRect, setOriginRect] = useStatePL(null);
   const messages = pending.messages || [];
 
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   const handleOpen = (e) => {
     if (isDropdown) {
       window.autoOpenSlackChannel = pending.channel;
@@ -873,7 +921,8 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
   useEffectPL(() => {
     if (!isDropdown && window.autoOpenSlackChannel === pending.channel) {
       window.autoOpenSlackChannel = null;
-      setTimeout(() => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
         const el = document.getElementById(`inbox-pending-${pending.channel}`);
         if (el) {
           const rect = el.getBoundingClientRect();
@@ -881,15 +930,18 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
           setExpanded(true);
           setIsClosing(false);
         }
+        autoOpenTimeoutRef.current = null;
       }, 120);
     }
   }, [isDropdown, pending.channel]);
 
   const close = () => {
     setIsClosing(true);
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       setExpanded(false);
       setIsClosing(false);
+      closeTimeoutRef.current = null;
     }, 280);
   };
 

@@ -748,7 +748,6 @@ function AddBranchModal({ onClose, onRefresh }) {
 // ── Parsed node preview card (shared with personal-log via window global) ──
 function ParsedNodeCard({ node, onChange, onRemove }) {
   const { TYPE_META } = window.HANDOFF;
-  const [editing, setEditing] = useState(false);
   const typeMap = { idea: 'experiment', link: 'reference' };
   const frontType = typeMap[node.type] || node.type;
   const m = TYPE_META[frontType] || TYPE_META.note;
@@ -1079,8 +1078,8 @@ function ParsedNodeCard({ node, onChange, onRemove }) {
         )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 auto' }}>
-        {onEdit && (
-          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={() => setEditing(true)}>
+        {onChange && !isEditing && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={() => setIsEditing(true)}>
             <Icon name="edit" size={13} color="var(--muted-2)" />
           </button>
         )}
@@ -1090,10 +1089,6 @@ function ParsedNodeCard({ node, onChange, onRemove }) {
           </button>
         )}
       </div>
-      {editing && (
-        <EditNodeDrawer node={node} onClose={() => setEditing(false)} onSave={updated => onEdit(updated)} />
->>>>>>> origin/main
-      )}
     </div>
   );
 }
@@ -1113,6 +1108,13 @@ function FreeformModal({ initialLaneId, originRect, onClose, onRefresh }) {
   const textareaRef = useRef(null);
   const [mentionPos, setMentionPos] = useState(null);
   const [isClosing, setIsClosing] = useState(false);
+
+  const closeTimeoutRef = useRef(null);
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
 
   const overlayRef = useRef(null);
   const modalRef = useRef(null);
@@ -1190,8 +1192,10 @@ function FreeformModal({ initialLaneId, originRect, onClose, onRefresh }) {
     }
 
     setIsClosing(true);
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       onClose();
+      closeTimeoutRef.current = null;
     }, 450);
   };
 
@@ -2402,6 +2406,13 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
   const containerRef = useRef(null);
   const [containerW, setContainerW] = useState(1800);
 
+  const linkingTimeoutRef = useRef(null);
+  useEffect(() => {
+    return () => {
+      if (linkingTimeoutRef.current) clearTimeout(linkingTimeoutRef.current);
+    };
+  }, []);
+
   const handleRangeChange = (r) => {
     setRange(r);
     const now = totalEnd;
@@ -2469,7 +2480,12 @@ function TimelineScreen({ styleVariant = 'railway', currentUser, onGenerateHando
     setLinking(true);
     await API.linkAllDecisions();
     // AI runs in background threads; give it time then auto-refresh
-    setTimeout(() => { onRefresh(); setLinking(false); }, 9000);
+    if (linkingTimeoutRef.current) clearTimeout(linkingTimeoutRef.current);
+    linkingTimeoutRef.current = setTimeout(() => {
+      onRefresh();
+      setLinking(false);
+      linkingTimeoutRef.current = null;
+    }, 9000);
   };
 
   const toggleUser = (id) => setHiddenUsers(prev => {

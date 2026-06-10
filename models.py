@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 db = SQLAlchemy()
@@ -9,7 +9,7 @@ class Project(db.Model):
     __tablename__ = 'project'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     context_doc = db.Column(db.Text, default='')
     nodes_since_last_link = db.Column(db.Integer, default=0)
     last_linked_at = db.Column(db.DateTime, nullable=True)
@@ -61,7 +61,7 @@ class Branch(db.Model):
     slug = db.Column(db.String(50), unique=True)
     parent_branch_id = db.Column(db.Integer, db.ForeignKey('branch.id'), nullable=True)
     created_by = db.Column(db.String(50), db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     archived_at = db.Column(db.DateTime, nullable=True)
     context_doc = db.Column(db.Text, default='')
     running_summary = db.Column(db.Text, default='')
@@ -111,7 +111,7 @@ class NodeLink(db.Model):
     is_ai = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default='confirmed')  # pending | confirmed | rejected
     description = db.Column(db.Text, default='')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self):
         return {
@@ -135,7 +135,7 @@ class Contact(db.Model):
     role = db.Column(db.String(100), default='')
     email = db.Column(db.String(200), default='')
     notes = db.Column(db.Text, default='')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self):
         return {
@@ -158,7 +158,7 @@ class InboxSuggestion(db.Model):
     raw_text = db.Column(db.Text, default='')
     nodes_json = db.Column(db.Text, default='[]')
     branch_slug = db.Column(db.String(50), default='')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     dismissed = db.Column(db.Boolean, default=False)
 
     @property
@@ -187,9 +187,9 @@ class SlackMessage(db.Model):
     user_id = db.Column(db.String(50), db.ForeignKey('user.id'), nullable=True)
     display_name = db.Column(db.String(200), nullable=False)
     text = db.Column(db.Text, nullable=False)
-    ts = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    ts = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     processed = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self):
         return {
@@ -208,7 +208,7 @@ class Node(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     branch_id = db.Column(db.Integer, db.ForeignKey('branch.id'), nullable=False)
     created_by = db.Column(db.String(50), db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     type = db.Column(db.String(20), nullable=False)   # commit|link|note|idea|task
     content = db.Column(db.Text, nullable=False)
     _metadata = db.Column('metadata', db.Text, default='{}')
