@@ -1,0 +1,130 @@
+[
+  {
+    "channel": "ml-team",
+    "user": "priya",
+    "text": "wait who changed the layoutlm preprocessing pipeline on main? the bounding box coordinates are completely shifted on my local run",
+    "ts": "2026-06-10T16:00:00"
+  },
+  {
+    "channel": "ml-team",
+    "user": "jensen",
+    "text": "oh that was me. synced with priya earlier but maybe i should have pinged the channel. we decided to switch the backbone to a multi-modal flow matching architecture because vanilla vit was completely failing on rotated scanned invoices",
+    "ts": "2026-06-10T16:02:15"
+  },
+  {
+    "channel": "ml-team",
+    "user": "priya",
+    "text": "but it broke the dataset split script! it is looking for absolute paths now or something?",
+    "ts": "2026-06-10T16:04:00"
+  },
+  {
+    "channel": "ml-team",
+    "user": "diego",
+    "text": "off topic but is anyone down for coffee? getting a cold brew in 5 mins",
+    "ts": "2026-06-10T16:05:10"
+  },
+  {
+    "channel": "ml-team",
+    "user": "jensen",
+    "text": "no i literally just fixed that. merged the relative path fix into main commit a8c3e2f so just pull that and it will run fine. anyway the results are worth it",
+    "ts": "2026-06-10T16:06:45"
+  },
+  {
+    "channel": "ml-team",
+    "user": "priya",
+    "text": "ok fine just pulled it. tracking looks normal now. wait wow the training baseline actually hit 91.2 percent f1 score on the validation set for table extraction? that actually beats production",
+    "ts": "2026-06-10T16:15:00"
+  },
+  {
+    "channel": "ml-team",
+    "user": "jensen",
+    "text": "told you. i put the full training script and logs in github.com/doc-parsing-org/core-ml/pull/412 if you want to review the loss curves",
+    "ts": "2026-06-10T16:18:30"
+  },
+
+  {
+    "channel": "infra",
+    "user": "diego",
+    "text": "do you think i should change the max queue delay on the triton inference server from 10ms to 5ms for the staging environment?",
+    "ts": "2026-06-10T16:30:00"
+  },
+  {
+    "channel": "infra",
+    "user": "maya",
+    "text": "i dont know, i dont think that affects the pipeline much. the bottleneck is elsewhere anyway",
+    "ts": "2026-06-10T16:32:00"
+  },
+  {
+    "channel": "infra",
+    "user": "diego",
+    "text": "no! it does affect the pipeline, it will break the whole latency target if opencv resizing keeps maxing out the cpu on worker node 4 like it did this morning",
+    "ts": "2026-06-10T16:35:12"
+  },
+  {
+    "channel": "infra",
+    "user": "maya",
+    "text": "wait did the node crash again? did you check the f1 race results from last weekend by the way? absolute chaos",
+    "ts": "2026-06-10T16:37:00"
+  },
+  {
+    "channel": "infra",
+    "user": "diego",
+    "text": "no time for racing talk lol. it did not crash because i switched the worker configuration to utilize pillow-simd with libjpeg-turbo instead of stock opencv. memory usage dropped by 40 percent so throughput doubled. that is why i am tweaking triton now",
+    "ts": "2026-06-10T16:40:20"
+  },
+  {
+    "channel": "infra",
+    "user": "maya",
+    "text": "ah damn okay that is a massive improvement. go ahead with the 5ms change then, let us keep latency under 45ms",
+    "ts": "2026-06-10T16:43:00"
+  },
+  {
+    "channel": "infra",
+    "user": "diego",
+    "text": "cool, just shipped the updated triton dynamic batching configs to staging. let us see how it handles the next load test",
+    "ts": "2026-06-10T16:48:00"
+  },
+
+  {
+    "channel": "doc-parsing-dev",
+    "user": "maya",
+    "text": "i am losing my mind over this markdown serializer. complex text blocks keep losing their bold and italic formatting indicators during the regex parsing phase",
+    "ts": "2026-06-10T17:00:00"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "jensen",
+    "text": "regex is going to be a nightmare for structural document hierarchies anyway. did you look at the paper i dropped yesterday?",
+    "ts": "2026-06-10T17:02:40"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "maya",
+    "text": "which one? you drop like five papers a week jensen",
+    "ts": "2026-06-10T17:05:00"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "jensen",
+    "text": "this one arxiv.org/abs/2303.12345 they use a graph neural network edge classification trick to preserve inline text attributes during structural parsing. exactly what you are fighting with",
+    "ts": "2026-06-10T17:07:15"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "diego",
+    "text": "random question, did anyone see a mechanical watch in the small meeting room? think i left it on the desk",
+    "ts": "2026-06-10T17:10:00"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "maya",
+    "text": "yeah i have it diego, will bring it over. and jensen, wow, okay this gnn edge parsing block actually works. implemented a variant of it in commit 4f6b12a and the inline token relationship errors vanished",
+    "ts": "2026-06-10T17:40:00"
+  },
+  {
+    "channel": "doc-parsing-dev",
+    "user": "maya",
+    "text": "just completed the final integration tests for the whole tables-to-markdown module too. officially launched the parsing patch to the beta branch",
+    "ts": "2026-06-10T17:55:00"
+  }
+]

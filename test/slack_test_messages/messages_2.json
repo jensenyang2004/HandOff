@@ -1,0 +1,86 @@
+[
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "uh guys we have a massive problem. the k8s cluster isn't autoscaling for the bank client deployment. we just dumped the 50k document batch into the ingress queue and pods are just sitting there pending",
+        "ts": "2026-06-10T14:00:00"
+    },
+    {
+        "channel": "infra",
+        "user": "jensen",
+        "text": "wait what? the hpa is literally configured to scale up to 20 replicas when cpu hits 70 percent. did the metrics server crash or something?",
+        "ts": "2026-06-10T14:02:10"
+    },
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "no the metrics server is completely fine. i just checked the k8s event logs and it says failed scheduling insufficient nvidia.com/gpu. it is a cloud quota limit error on our node pool",
+        "ts": "2026-06-10T14:05:30"
+    },
+    {
+        "channel": "infra",
+        "user": "maya",
+        "text": "holy crap that means the parsing workers are trying to spin up on gpu instances we dont have access to. can we just fallback to cpu processing for the text tokenization layer?",
+        "ts": "2026-06-10T14:07:00"
+    },
+    {
+        "channel": "infra",
+        "user": "priya",
+        "text": "i don't know, i don't think that works. if you force the pipeline onto cpu the layoutlm inference latency will skyrocket from 80ms to over 3 seconds per page. it'll completely break the whole customer slas",
+        "ts": "2026-06-10T14:09:15"
+    },
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "priya is right, cpu fallback will tank the cluster completely. also random side note did anyone take my charger from the lounge? my laptop is at 4 percent",
+        "ts": "2026-06-10T14:11:00"
+    },
+    {
+        "channel": "infra",
+        "user": "jensen",
+        "text": "your charger is on the kitchen counter diego. look, instead of a pure fallback, why don't we do a hybrid routing? we can split the incoming payload. we keep the heavy layout parsing on our 4 available gpu pods, but route the pure text markdown serialization tasks to a temporary cpu-only deployment",
+        "ts": "2026-06-10T14:14:45"
+    },
+    {
+        "channel": "infra",
+        "user": "priya",
+        "text": "wait that actually makes a lot of sense because the gnn edge parser doesn't actually need tensor cores as heavily as the vision backbone. do we have a config flag for that?",
+        "ts": "2026-06-10T14:17:20"
+    },
+    {
+        "channel": "infra",
+        "user": "jensen",
+        "text": "yes we do. we decided to build that decouple mechanism last month. i just modified the helm values file to separate the deployments and split the queues. pushed the fix to deployment configuration main branch, commit e39b811",
+        "ts": "2026-06-10T14:22:00"
+    },
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "grabbed my charger. okay just applied jensen's helm update to the production cluster. checking the pods now...",
+        "ts": "2026-06-10T14:28:30"
+    },
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "it worked! the cpu node pool scaled up by 12 nodes instantly because the quota there is massive. the gpu pods are no longer choked because the serialization load was pulled off them",
+        "ts": "2026-06-10T14:35:00"
+    },
+    {
+        "channel": "infra",
+        "user": "maya",
+        "text": "awesome. what is the current processing rate for the bank's batch?",
+        "ts": "2026-06-10T14:37:12"
+    },
+    {
+        "channel": "infra",
+        "user": "diego",
+        "text": "we are hitting 140 documents per second now. overall queue processing latency is stable at 42ms which is well under our 50ms customer target. shipped the deployment successfully to the client space",
+        "ts": "2026-06-10T14:45:00"
+    },
+    {
+        "channel": "infra",
+        "user": "jensen",
+        "text": "huge win team. i put the full incident post-mortem notes and the architectural layout changes over at github.com/doc-parsing-org/infra/issues/899 if anyone wants to add details for the client report",
+        "ts": "2026-06-10T14:50:00"
+    }
+]
