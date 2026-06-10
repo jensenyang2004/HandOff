@@ -304,6 +304,20 @@ const API = {
     return r.json();
   },
 
+  async getSlackPending() {
+    const r = await fetch('/api/inbox/slack/pending');
+    return r.json();
+  },
+
+  async interpretSlack(channel, branchSlug) {
+    const r = await fetch('/api/inbox/slack/interpret', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, branch_slug: branchSlug }),
+    });
+    return r.json();
+  },
+
   async handover(userId) {
     const r = await fetch('/api/ai/handover', {
       method: 'POST',

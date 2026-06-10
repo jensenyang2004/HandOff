@@ -1,5 +1,8 @@
 import os
 import json
+import hmac
+import hashlib
+import time
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -11,7 +14,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion
+from models import db, Project, User, Branch, Node, Contact, NodeLink, InboxSuggestion, SlackMessage
 from ai_service import AIService
 
 load_dotenv()
@@ -405,6 +408,157 @@ def create_app():
         item.dismissed = True
         db.session.commit()
         return jsonify({'ok': True})
+
+    # ── Webhooks ──────────────────────────────────────────────────────────────
+    @app.route('/api/webhook/github', methods=['POST'])
+    def webhook_github():
+        payload = request.get_json(silent=True) or {}
+        if not payload.get('ref') or not payload.get('head_commit') or not payload.get('pusher'):
+            return jsonify({'error': 'ref, head_commit, and pusher are required'}), 400
+
+        head = payload['head_commit']
+        sha = head.get('id', '')
+        message = head.get('message', '')
+        first_line = message.splitlines()[0] if message else ''
+
+        # user may be None if no match — still create the suggestion
+        User.query.filter_by(github_handle=payload['pusher'].get('name', '')).first()
+
+        suggestion = InboxSuggestion(
+            source='git',
+            title=f"[{sha[:7]}] {first_line}"[:200],
+            raw_text=message,
+            nodes_json='[]',
+            branch_slug='',
+        )
+        db.session.add(suggestion)
+        db.session.commit()
+        return jsonify({'ok': True, 'id': suggestion.id}), 201
+
+    def _verify_slack_signature(req):
+        """Slack request signing (https://api.slack.com/authentication/verifying-requests-from-slack).
+        Skipped when SLACK_SIGNING_SECRET is not configured (local dev / curl testing)."""
+        secret = os.environ.get('SLACK_SIGNING_SECRET')
+        if not secret:
+            return True
+        ts = req.headers.get('X-Slack-Request-Timestamp', '')
+        sig = req.headers.get('X-Slack-Signature', '')
+        if not ts or not sig:
+            return False
+        try:
+            if abs(time.time() - float(ts)) > 60 * 5:
+                return False  # replay protection
+        except ValueError:
+            return False
+        base = f'v0:{ts}:'.encode() + req.get_data()
+        expected = 'v0=' + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig)
+
+    def _store_slack_message(channel, slack_user, text, ts, display_name=None):
+        user = User.query.filter_by(slack_username=slack_user).first()
+        m = SlackMessage(
+            channel=channel,
+            user_id=user.id if user else None,
+            display_name=user.name if user else (display_name or slack_user),
+            text=text,
+            ts=ts,
+        )
+        db.session.add(m)
+        db.session.commit()
+        return m
+
+    @app.route('/api/webhook/slack', methods=['POST'])
+    def webhook_slack():
+        if not _verify_slack_signature(request):
+            return jsonify({'error': 'invalid slack signature'}), 401
+        payload = request.get_json(silent=True) or {}
+
+        # Slack Events API: URL verification handshake
+        if payload.get('type') == 'url_verification':
+            return jsonify({'challenge': payload.get('challenge', '')})
+
+        # Slack Events API: message event callback
+        if payload.get('type') == 'event_callback':
+            event = payload.get('event') or {}
+            # skip non-messages, edits/joins (subtype) and bot echoes to avoid loops
+            if event.get('type') != 'message' or event.get('subtype') or event.get('bot_id'):
+                return jsonify({'ok': True, 'ignored': True})
+            channel = event.get('channel', '')
+            slack_user = event.get('user', '')
+            text = (event.get('text') or '').strip()
+            if not channel or not slack_user or not text:
+                return jsonify({'ok': True, 'ignored': True})
+            ts = datetime.utcnow()
+            try:
+                ts = datetime.utcfromtimestamp(float(event.get('ts')))
+            except (TypeError, ValueError):
+                pass
+            m = _store_slack_message(channel, slack_user, text, ts)
+            return jsonify({'ok': True, 'id': m.id}), 201
+
+        # Simplified custom schema (docs/slack-webhook-spec.md)
+        channel = (payload.get('channel') or '').strip()
+        slack_user = (payload.get('user') or '').strip()
+        text = (payload.get('text') or '').strip()
+        if not channel or not slack_user or not text:
+            return jsonify({'error': 'channel, user, and text are required'}), 400
+
+        ts = datetime.utcnow()
+        if payload.get('ts'):
+            try:
+                ts = datetime.fromisoformat(payload['ts'])
+            except (ValueError, TypeError):
+                pass
+
+        m = _store_slack_message(channel, slack_user, text, ts,
+                                 display_name=payload.get('display_name'))
+        return jsonify({'ok': True, 'id': m.id}), 201
+
+    @app.route('/api/inbox/slack/pending')
+    def slack_pending():
+        rows = (db.session.query(SlackMessage.channel, db.func.count(SlackMessage.id))
+                .filter(SlackMessage.processed == False)
+                .group_by(SlackMessage.channel)
+                .all())
+        return jsonify([{'channel': c, 'count': n} for c, n in rows])
+
+    @app.route('/api/inbox/slack/interpret', methods=['POST'])
+    def interpret_slack():
+        data = request.get_json(silent=True) or {}
+        channel = data.get('channel', '')
+        branch = Branch.query.filter_by(slug=data.get('branch_slug', '')).first_or_404()
+
+        messages = (SlackMessage.query
+                    .filter_by(channel=channel, processed=False)
+                    .order_by(SlackMessage.ts)
+                    .all())
+        if not messages:
+            return jsonify({'error': 'no pending messages for this channel'}), 400
+
+        def fmt_time(dt):
+            return dt.strftime('%I:%M %p').lstrip('0')
+
+        # Format must match the parseSlackMessages regex in personal-log.jsx
+        raw_text = '\n'.join(
+            f"{m.display_name} [{fmt_time(m.ts)}]: {m.text}"
+            for m in messages
+        )
+
+        project = Project.query.first()
+        nodes = ai.parse_log(project.to_dict() if project else {}, branch.to_dict(), raw_text)
+
+        suggestion = InboxSuggestion(
+            source='slack',
+            title=f"#{channel} · {len(messages)} messages",
+            raw_text=raw_text,
+            nodes_json=json.dumps(nodes),
+            branch_slug=branch.slug,
+        )
+        db.session.add(suggestion)
+        for m in messages:
+            m.processed = True
+        db.session.commit()
+        return jsonify({'ok': True, 'id': suggestion.id}), 201
 
     # ── Activity feed ─────────────────────────────────────────────────────────
     @app.route('/api/activity')
