@@ -412,28 +412,54 @@ def create_app():
     # ── Webhooks ──────────────────────────────────────────────────────────────
     @app.route('/api/webhook/github', methods=['POST'])
     def webhook_github():
-        payload = request.get_json(silent=True) or {}
-        if not payload.get('ref') or not payload.get('head_commit') or not payload.get('pusher'):
-            return jsonify({'error': 'ref, head_commit, and pusher are required'}), 400
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({'error': 'invalid JSON'}), 400
 
-        head = payload['head_commit']
-        sha = head.get('id', '')
-        message = head.get('message', '')
-        first_line = message.splitlines()[0] if message else ''
+        # Validate required fields
+        pusher = payload.get('pusher')
+        head_commit = payload.get('head_commit')
+        ref = payload.get('ref')
 
-        # user may be None if no match — still create the suggestion
-        User.query.filter_by(github_handle=payload['pusher'].get('name', '')).first()
+        if not pusher or not head_commit or not ref:
+            return jsonify({'error': 'missing required fields: pusher, head_commit, ref'}), 400
 
-        suggestion = InboxSuggestion(
+        # Extract fields from the push payload
+        github_name = pusher.get('name', '')
+        commit_sha = head_commit.get('id', '')[:7]
+        commit_msg = head_commit.get('message', '').split('\n')[0]
+        branch_name = ref.replace('refs/heads/', '')
+
+        # Match pusher to a system user via github_handle (optional)
+        user = User.query.filter_by(github_handle=github_name).first()
+
+        # Build title in the same format as seeded git items
+        title = f"{commit_sha} — {commit_msg}"
+
+        # Construct the commit node details to populate nodes_json
+        commit_node = {
+            'type': 'commit',
+            'content': commit_msg,
+            'metadata': {
+                'hash': commit_sha,
+                'title': commit_msg,
+                'body': head_commit.get('message', ''),
+            }
+        }
+        if user:
+            commit_node['created_by'] = user.id
+
+        item = InboxSuggestion(
             source='git',
-            title=f"[{sha[:7]}] {first_line}"[:200],
-            raw_text=message,
-            nodes_json='[]',
+            title=title,
+            raw_text=f"pushed by {github_name} to {branch_name}",
+            nodes_json=json.dumps([commit_node]),
             branch_slug='',
         )
-        db.session.add(suggestion)
+        db.session.add(item)
         db.session.commit()
-        return jsonify({'ok': True, 'id': suggestion.id}), 201
+
+        return jsonify({'ok': True, 'id': item.id}), 201
 
     def _verify_slack_signature(req):
         """Slack request signing (https://api.slack.com/authentication/verifying-requests-from-slack).
