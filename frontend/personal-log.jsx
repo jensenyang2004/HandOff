@@ -427,7 +427,10 @@ function parseSlackMessages(rawText) {
 // ── Inbox: Git commit banner ───────────────────────────────────────────────
 function GitBanner({ item, onDismiss, onRefresh }) {
   const { LANES, CURRENT_USER } = window.HANDOFF;
-  const firstNode = (item.nodes || [])[0] || {};
+  const [nodes, setNodes] = useStatePL(item.nodes || []);
+  const [interpreted, setInterpreted] = useStatePL(false);
+  const [interpreting, setInterpreting] = useStatePL(false);
+  const firstNode = nodes[0] || {};
   const meta = firstNode.metadata || {};
   const [note, setNote] = useStatePL('');
   const [lane, setLane] = useStatePL(() => {
@@ -436,17 +439,29 @@ function GitBanner({ item, onDismiss, onRefresh }) {
   });
   const [saving, setSaving] = useStatePL(false);
 
+  const interpretWithAI = async () => {
+    if (interpreting) return;
+    setInterpreting(true);
+    const res = await API.interpretInbox(item.id, lane);
+    if (res && Array.isArray(res.nodes)) {
+      setNodes(res.nodes);
+      setInterpreted(true);
+    }
+    setInterpreting(false);
+  };
+
   const save = async () => {
-    if (saving) return;
+    if (saving || !nodes.length) return;
     setSaving(true);
     const selectedLane = LANES.find(l => l.id === lane);
     if (selectedLane) {
-      await API.addNode(selectedLane.dbId, {
-        type: firstNode.type || 'commit',
-        content: firstNode.content || meta.title,
-        created_by: CURRENT_USER,
-        metadata: { ...meta, ...(note.trim() ? { note: note.trim() } : {}) },
-      });
+      for (const n of nodes) {
+        await API.addNode(selectedLane.dbId, {
+          type: n.type, content: n.content, created_by: CURRENT_USER,
+          metadata: { ...(n.metadata || {}), ...(!interpreted && note.trim() ? { note: note.trim() } : {}) },
+          is_ai_generated: interpreted,
+        });
+      }
     }
     await API.dismissInbox(item.id);
     setSaving(false);
@@ -465,19 +480,43 @@ function GitBanner({ item, onDismiss, onRefresh }) {
         <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>pushed just now</span>
       </div>
+
+      {/* AI-extracted nodes (after Interpret) */}
+      {interpreted && (
+        <div style={{ marginBottom: 11 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8 }}>
+            {nodes.length} node{nodes.length !== 1 ? 's' : ''} extracted — remove any you don't need
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {nodes.length === 0
+              ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
+              : nodes.map((n, i) => (
+                  <ParsedNodeCard key={i} node={n} onRemove={() => setNodes(p => p.filter((_, j) => j !== i))} />
+                ))}
+          </div>
+        </div>
+      )}
+
       {/* Note + lane + actions */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input value={note} onChange={e => setNote(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && save()}
-          placeholder="Add a note about this commit… (optional)"
-          style={{ flex: 1, minWidth: 200, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
+        {!interpreted && (
+          <input value={note} onChange={e => setNote(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && save()}
+            placeholder="Add a note about this commit… (optional)"
+            style={{ flex: 1, minWidth: 200, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
+        )}
         <select value={lane} onChange={e => setLane(e.target.value)}
-          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
+          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: interpreted ? '1' : '0 0 auto' }}>
           {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
+        {!interpreted && (
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} disabled={interpreting} onClick={interpretWithAI}>
+            {interpreting ? 'Interpreting…' : 'Interpret with AI ✨'}
+          </button>
+        )}
         <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={skip}>Skip</button>
-        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={saving} onClick={save}>
-          {saving ? 'Saving…' : 'Add to log →'}
+        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={saving || !nodes.length} onClick={save}>
+          {saving ? 'Saving…' : interpreted ? `Add ${nodes.length} entr${nodes.length !== 1 ? 'ies' : 'y'} →` : 'Add to log →'}
         </button>
       </div>
     </div>

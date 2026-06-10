@@ -409,6 +409,28 @@ def create_app():
         db.session.commit()
         return jsonify({'ok': True})
 
+    @app.route('/api/inbox/<int:item_id>/interpret', methods=['POST'])
+    def interpret_inbox(item_id):
+        item = InboxSuggestion.query.get_or_404(item_id)
+        data = request.get_json(silent=True) or {}
+        branch_slug = data.get('branch_slug') or item.branch_slug
+        branch = Branch.query.filter_by(slug=branch_slug).first_or_404()
+        project = Project.query.first()
+
+        # For git items, the deterministic commit node already carries the
+        # full commit message in metadata.body — that's richer than raw_text
+        # ("pushed by X to Y") and is what AI should parse.
+        existing_nodes = item.nodes
+        text = existing_nodes[0]['metadata'].get('body', '') if existing_nodes else item.raw_text
+        text = text or item.raw_text
+
+        nodes = ai.parse_log(project.to_dict() if project else {}, branch.to_dict(), text)
+
+        item.nodes_json = json.dumps(nodes)
+        item.branch_slug = branch_slug
+        db.session.commit()
+        return jsonify({'ok': True, 'nodes': nodes})
+
     # ── Webhooks ──────────────────────────────────────────────────────────────
     @app.route('/api/webhook/github', methods=['POST'])
     def webhook_github():
