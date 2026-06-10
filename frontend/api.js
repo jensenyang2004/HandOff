@@ -304,6 +304,15 @@ const API = {
     return r.json();
   },
 
+  async interpretInbox(itemId, branchSlug) {
+    const r = await fetch(`/api/inbox/${itemId}/interpret`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch_slug: branchSlug }),
+    });
+    return r.json();
+  },
+
   async getSlackPending() {
     const r = await fetch('/api/inbox/slack/pending');
     return r.json();

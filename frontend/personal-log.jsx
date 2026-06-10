@@ -470,7 +470,10 @@ function parseSlackMessages(rawText) {
 // ── Inbox: Git commit banner ───────────────────────────────────────────────
 function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) {
   const { LANES, CURRENT_USER } = window.HANDOFF;
-  const firstNode = (item.nodes || [])[0] || {};
+  const [nodes, setNodes] = useStatePL(item.nodes || []);
+  const [interpreted, setInterpreted] = useStatePL(false);
+  const [interpreting, setInterpreting] = useStatePL(false);
+  const firstNode = nodes[0] || {};
   const meta = firstNode.metadata || {};
   const [note, setNote] = useStatePL('');
   const [lane, setLane] = useStatePL(() => {
@@ -517,17 +520,29 @@ function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) 
     }, 280);
   };
 
+  const interpretWithAI = async () => {
+    if (interpreting) return;
+    setInterpreting(true);
+    const res = await API.interpretInbox(item.id, lane);
+    if (res && Array.isArray(res.nodes)) {
+      setNodes(res.nodes);
+      setInterpreted(true);
+    }
+    setInterpreting(false);
+  };
+
   const save = async () => {
-    if (saving) return;
+    if (saving || !nodes.length) return;
     setSaving(true);
     const selectedLane = LANES.find(l => l.id === lane);
     if (selectedLane) {
-      await API.addNode(selectedLane.dbId, {
-        type: firstNode.type || 'commit',
-        content: firstNode.content || meta.title,
-        created_by: CURRENT_USER,
-        metadata: { ...meta, ...(note.trim() ? { note: note.trim() } : {}) },
-      });
+      for (const n of nodes) {
+        await API.addNode(selectedLane.dbId, {
+          type: n.type, content: n.content, created_by: CURRENT_USER,
+          metadata: { ...(n.metadata || {}), ...(!interpreted && note.trim() ? { note: note.trim() } : {}) },
+          is_ai_generated: interpreted,
+        });
+      }
     }
     await API.dismissInbox(item.id);
     setSaving(false);
@@ -612,6 +627,32 @@ function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) 
         </div>
       )}
     </>
+  );
+}
+
+// ── Inbox: shared raw Slack message log (used by both banners) ────────────
+function SlackMessageLog({ messages }) {
+  return (
+    <div style={{ background: 'var(--bg)', borderRadius: 9, padding: '11px 12px', margin: '12px 0 13px' }}>
+      {messages.map((m, i) => {
+        const initials = m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const hue = (m.name.charCodeAt(0) * 37 + m.name.charCodeAt(m.name.length - 1) * 13) % 360;
+        return (
+          <div key={i} style={{ display: 'flex', gap: 9, marginBottom: i < messages.length - 1 ? 10 : 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 6, background: `hsl(${hue},35%,22%)`, border: `1px solid hsl(${hue},40%,32%)`, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: `hsl(${hue},55%,65%)` }}>
+              {initials}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', marginBottom: 2 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6dd' }}>{m.name.split(' ')[0]}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{m.time}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: '#b0b0c0', lineHeight: 1.55, wordBreak: 'break-word' }}>{m.text}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -811,9 +852,11 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
   const { LANES } = window.HANDOFF;
   const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
   const [working, setWorking] = useStatePL(false);
+  const [emptyResult, setEmptyResult] = useStatePL(false);
   const [expanded, setExpanded] = useStatePL(false);
   const [isClosing, setIsClosing] = useStatePL(false);
   const [originRect, setOriginRect] = useStatePL(null);
+  const messages = pending.messages || [];
 
   const handleOpen = (e) => {
     if (isDropdown) {
@@ -853,8 +896,13 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
   const interpret = async () => {
     if (working || !lane) return;
     setWorking(true);
-    await API.interpretSlack(pending.channel, lane);
+    setEmptyResult(false);
+    const res = await API.interpretSlack(pending.channel, lane);
     setWorking(false);
+    if (res && res.ok && res.id == null) {
+      setEmptyResult(true);
+      return;
+    }
     onInterpreted();
     close();
   };
@@ -905,17 +953,11 @@ function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLo
                   Gemini AI will analyze the messages, extract tasks, commits, ideas, and decisions, and suggest them for your logs.
                 </span>
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>Select Target Lane for Analysis</span>
-                <div style={{ position: 'relative', width: '100%' }}>
-                  <select value={lane} onChange={e => setLane(e.target.value)}
-                    style={{ width: '100%', appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 32px 10px 12px', color: 'var(--text)', fontSize: 13.5, outline: 'none' }}>
-                    {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><Icon name="chevDown" size={16} color="var(--muted)" /></span>
+              {emptyResult && (
+                <div style={{ fontSize: 12.5, color: 'var(--amber)', marginBottom: 12, padding: '8px 11px', background: '#EF9F270d', borderRadius: 7 }}>
+                  No noteworthy updates found, left for next time.
                 </div>
-              </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: 16 }}>

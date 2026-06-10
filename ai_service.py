@@ -139,6 +139,7 @@ Parse the following input into structured timeline nodes for a software project.
 Return a strict JSON array only. No prose. No explanation.
 
 Rules:
+- If the input contains NO project-relevant content — e.g. it's purely small talk, social chitchat, scheduling lunch/coffee, greetings, jokes — return an empty array []. Do not invent a node just to produce output. A node should only be created if there is something a teammate would actually want recorded (a decision, result, task, link, meeting outcome, milestone, etc).
 - Extract EVERY URL as its own separate node of type "link". Never embed a URL inside another node.
 - Detect link kind: arxiv.org / doi.org / .pdf → "Paper"; github.com / gitlab.com → "Repo"; anything else → "Article" or "Docs".
 - If the input contains both narrative text AND one or more URLs, produce multiple nodes: one for the narrative (commit/note/idea) and one per URL.
@@ -198,6 +199,8 @@ Each node schema:
             t, ref_kind = 'milestone', None
         elif re.search(r'=|\d+%|acc|loss|f1|epoch', text, re.I):
             t, ref_kind = 'idea', None
+        elif re.search(r'\blunch\b|\bcoffee\b|\bhappy hour\b|\bgood morning\b|\blol\b|\bhaha\b|\bthanks\b|\bthank you\b|\bcongrats\b|\bweekend\b', text, re.I):
+            return []
         else:
             t, ref_kind = 'note', None
         meta = {'title': text[:80], 'note': text[:120]}

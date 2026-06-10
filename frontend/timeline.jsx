@@ -746,9 +746,9 @@ function AddBranchModal({ onClose, onRefresh }) {
 }
 
 // ── Parsed node preview card (shared with personal-log via window global) ──
-// ── Parsed node preview card (shared with personal-log via window global) ──
 function ParsedNodeCard({ node, onChange, onRemove }) {
   const { TYPE_META } = window.HANDOFF;
+  const [editing, setEditing] = useState(false);
   const typeMap = { idea: 'experiment', link: 'reference' };
   const frontType = typeMap[node.type] || node.type;
   const m = TYPE_META[frontType] || TYPE_META.note;
@@ -1078,21 +1078,21 @@ function ParsedNodeCard({ node, onChange, onRemove }) {
           </>
         )}
       </div>
-
-      {/* Edit and Remove action buttons */}
-      {!isEditing && (
-        <div style={{ display: 'flex', gap: 4, flex: '0 0 auto', alignSelf: 'flex-start' }}>
-          {onChange && (
-            <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}>
-              <Icon name="edit" size={13} color="var(--muted-2)" />
-            </button>
-          )}
-          {onRemove && (
-            <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); onRemove(); }}>
-              <Icon name="close" size={13} color="var(--muted-2)" />
-            </button>
-          )}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 auto' }}>
+        {onEdit && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={() => setEditing(true)}>
+            <Icon name="edit" size={13} color="var(--muted-2)" />
+          </button>
+        )}
+        {onRemove && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: 4 }} onClick={onRemove}>
+            <Icon name="close" size={13} color="var(--muted-2)" />
+          </button>
+        )}
+      </div>
+      {editing && (
+        <EditNodeDrawer node={node} onClose={() => setEditing(false)} onSave={updated => onEdit(updated)} />
+>>>>>>> origin/main
       )}
     </div>
   );
@@ -1407,6 +1407,7 @@ function FreeformModal({ initialLaneId, originRect, onClose, onRefresh }) {
               )}
             </div>
           </div>
+
         </div>
       </div>
 

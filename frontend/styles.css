@@ -269,6 +269,7 @@ input, textarea { font-family: inherit; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes popIn { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes slideInRight { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: none; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
