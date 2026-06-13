@@ -67,7 +67,7 @@ HandOff/
 └── test/                     # pytest 測試
 ```
 ## EER Diagram
-![image](https://hackmd.io/_uploads/SJYSgxjbzg.png)
+![image](https://github.com/jensenyang2004/HandOff/blob/main/截圖%202026-06-14%20凌晨1.02.04.png)
 
 ## 主要功能
 
@@ -508,7 +508,7 @@ Step 6
 - Handover report
 
 ## Low fidelity Wireframes 
-![Add a little bit of body text](https://hackmd.io/_uploads/r1o4jbj-Ml.png)
+![image](https://github.com/jensenyang2004/HandOff/blob/main/Add%20a%20little%20bit%20of%20body%20text.png)
 
 
 
