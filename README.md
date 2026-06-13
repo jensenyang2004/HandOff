@@ -14,7 +14,6 @@ HandOff 是一套「專案交接與工程知識管理系統」。它的目標是
 - 測試
 - 補充文件
 - User Stories Mapping
-- Business Process Modeling Notation (BPMN)
 - Low fidelity Wireframes
 
 
@@ -67,6 +66,8 @@ HandOff/
 ├── docs/                     # 補充規格文件
 └── test/                     # pytest 測試
 ```
+## EER Diagram
+![image](https://hackmd.io/_uploads/SJYSgxjbzg.png)
 
 ## 主要功能
 
@@ -174,76 +175,6 @@ GitHub 與 Slack 匯入的資料都會先進入 Inbox，不會直接寫入 timel
 管理者可以透過 manager dashboard 查看專案與團隊狀態，例如最近活動、分支進度、任務分配、尚未完成的工作、交接風險。
 
 這讓管理者不需要逐一詢問成員，也能掌握專案脈絡。
-
-## User Stories Mapping
-
-這張 user story map 以「使用者從記錄工作到完成交接」作為主要 narrative，由左到右閱讀；越上方代表越核心、越高優先級的功能。
-
-```text
-Priority ↑
-
-Backbone / Activities
-┌──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-│ 1. Capture Work  │ 2. Review Inbox   │ 3. Organize      │ 4. Understand    │ 5. Manage Tasks  │ 6. Handover      │
-│ 記錄工作          │ 審核外部資訊       │ 整理到分支        │ 理解專案脈絡       │ 管理任務          │ 產生交接          │
-└──────────────────┴──────────────────┴──────────────────┴──────────────────┴──────────────────┴──────────────────┘
-
-Narrative →
-使用者記錄或匯入資訊 → 審核待新增內容 → 放入正確 branch → 看懂脈絡與關聯 → 追蹤任務 → 產生交接報告
-```
-
-| Priority | Capture Work<br>記錄工作 | Review Inbox<br>審核外部資訊 | Organize<br>整理到分支 | Understand<br>理解專案脈絡 | Manage Tasks<br>管理任務 | Handover<br>產生交接 |
-| --- | --- | --- | --- | --- | --- | --- |
-| **High**<br>MVP 必要 | 使用者可以手動新增 note、commit、link、decision 等 node。 | GitHub push 會進入 Inbox，形成 commit suggestion。 | 使用者可以選擇 branch，將確認後的 node 加入 timeline。 | Timeline 可以依 branch 顯示所有 nodes。 | 使用者可以看到自己被指派的 task。 | 使用者可以產生基本 handover report。 |
-| **High**<br>MVP 必要 | 使用者可以在 My Log 貼上自由文字。 | Slack 訊息會先暫存，並在 Inbox 顯示 pending messages。 | 系統可以把 node 綁定到指定 branch。 | 使用者可以點開 node 查看詳細內容與 metadata。 | 使用者可以更新 task 狀態，例如 pending、acknowledged、done。 | 報告可以列出 branch 狀態、重要決策與未完成任務。 |
-| **Medium**<br>重要但可分階段 | AI 可以將自由文字解析成 structured nodes。 | 使用者可以選擇 Slack channel window 並按 Interpret。 | 使用者可以建立新 branch 並填寫 branch context。 | AI 可以根據 branch nodes 產生 branch context。 | Manager 可以在 dashboard 查看任務分配。 | AI 可以根據 project、branch、nodes 產生更完整的交接內容。 |
-| **Medium**<br>重要但可分階段 | 系統可以從輸入中辨識 link、commit hash、meeting、milestone。 | 使用者可以 dismiss 不需要的 Inbox item。 | 系統可以保存 node metadata，例如 hash、due date、rationale。 | 系統可以顯示 decision 與其他 nodes 的關聯。 | Manager 可以查看尚未完成或逾期任務。 | 交接報告可以整理 references、dead ends、open questions。 |
-| **Low**<br>延伸功能 | 支援更完整的 Slack thread/window 判斷。 | 自動判斷 Slack 訊息可能對應哪個 commit。 | 支援 multi-project 或跨專案 branch。 | AI 自動偵測 branch 風險與 stale work。 | 任務提醒與通知整合。 | 匯出 PDF、Markdown 或分享連結。 |
-
-### User Story Map Narrative
-
-```text
-Step 1
-使用者先透過手動輸入、My Log、GitHub webhook 或 Slack webhook 捕捉工作資訊。
-
-then
-
-Step 2
-外部資訊先進入 Inbox，由使用者檢查、選擇 branch、Interpret 或 dismiss。
-
-then
-
-Step 3
-確認後的資訊被儲存為 node，並放到正確的 branch timeline。
-
-then
-
-Step 4
-團隊透過 timeline、branch context、decision linking 理解專案脈絡。
-
-then
-
-Step 5
-使用者與管理者追蹤任務狀態、負責人與 deadline。
-
-then
-
-Step 6
-需要交接時，系統根據 branch、node、task 與 context 產生 handover report。
-```
-
-### MVP 範圍
-
-Milestone 4 的核心 MVP 範圍包含：
-
-- 手動新增與顯示 timeline nodes。
-- My Log 自由文字解析。
-- GitHub commit suggestion。
-- Slack pending messages 與 Interpret。
-- Inbox 審核流程。
-- Branch context。
-- Task 狀態追蹤。
-- Handover report。
 
 
 ## 安裝與啟動
@@ -530,3 +461,54 @@ User Input
 - `docs/webhook-spec.md`：GitHub webhook 規格。
 - `docs/slack-webhook-spec.md`：Slack webhook 規格。
 - `docs/link_feat.md`：Decision linking 功能筆記。
+
+## User Stories Mapping
+
+Backbone / Activities：記錄工作 → 審核外部資訊 →  整理到分支 → 理解專案脈絡 → 管理與追蹤任務 → 產生交接
+
+
+| Priority | 記錄工作 |審核外部資訊 |整理到分支 | 理解專案脈絡 | 管理任務 | 產生交接 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **High**<br>MVP 必要 | 使用者可以手動新增 note、commit、reference、decision、meeting等node。 | GitHub push 會進入 Inbox，形成 commit suggestion。 | 使用者可以選擇 branch，將確認後的 node 加入 timeline。 | Timeline 可以依 branch 顯示所有 nodes。 | 使用者可以看到自己被指派的 task。 | 使用者可以產生基本 handover report。 |
+| **High**<br>MVP 必要 | 使用者可以在 Free Log 貼上任意專案相關文字。 | Slack 訊息會先暫存，並在 Inbox 顯示 pending messages。 | 系統可以把 node 綁定到指定 branch。 | 使用者可以點開 node 查看詳細內容與 metadata。 | 使用者可以更新 task 狀態，例如 pending、acknowledged、done。 | 報告可以列出 branch 狀態、重要決策與未完成任務。 |
+| **Medium**<br>重要但可分階段 | AI 可以將任意文字解析成 structured nodes。 | 使用者可以選擇 Slack channel window 並按 Interpret。 | 使用者可以建立新 branch 並填寫 branch context。 | AI 可以根據 branch nodes 產生 branch context。 | Manager 可以在 dashboard 查看任務分配。 | AI 可以根據 project、branch、nodes 產生更完整的交接內容。 |
+| **Medium**<br>重要但可分階段 | 系統可以從輸入中辨識 link、commit hash、meeting、milestone。 | 使用者可以 dismiss 不需要的 Inbox item。 | 系統可以保存 node metadata，例如 hash、due date、rationale。 | 系統可以顯示 decision 與其他 nodes 的關聯。 | Manager 可以查看尚未完成或逾期任務。 | 交接報告可以整理 references、dead ends、open questions。 |
+| **Low**<br>延伸功能 | 支援更完整的 Slack thread/window 判斷。 | 自動判斷 Slack 訊息可能對應哪個 commit。 | 支援 multi-project 或跨專案 branch。 | AI 自動偵測 branch 風險與 stale work。 | 任務提醒與通知整合。 | 匯出 PDF、Markdown 或分享連結。 |
+
+### User Story Map Narrative
+
+```text
+Step 1
+使用者先透過手動輸入、My Log、GitHub webhook 或 Slack webhook 捕捉工作資訊。
+
+Step 2
+外部資訊先進入 Inbox，由使用者檢查、選擇 branch、Interpret 或 dismiss。
+
+Step 3
+確認後的資訊被儲存為 node，並放到正確的 branch timeline。
+
+Step 4
+團隊透過 timeline、branch context、decision linking 理解專案脈絡。
+
+Step 5
+使用者與管理者追蹤任務狀態、負責人與 deadline。
+
+Step 6
+需要交接時，系統根據 branch、node、task 與 context 產生 handover report。
+```
+
+### MVP 範圍
+- 手動新增與顯示 timeline nodes
+- Free Log 自由文字解析
+- GitHub commit suggestion
+- Slack pending messages 與 Interpret
+- Inbox 審核流程
+- Branch context
+- Task 狀態追蹤
+- Handover report
+
+## Low fidelity Wireframes 
+![Add a little bit of body text](https://hackmd.io/_uploads/r1o4jbj-Ml.png)
+
+
+
