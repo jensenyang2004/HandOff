@@ -1,3 +1,68 @@
+### 啟動專案
+
+-  快速啟動 (for MacOS)
+```bash
+./run.sh
+```
+如果無法啟動，請參照以下步驟
+
+- 手動啟動
+1. 建立 Python virtual environment
+
+```bash
+python -m venv .venv
+```
+
+2. 啟用 virtual environment
+
+macOS / Linux：
+
+```bash
+. .venv/bin/activate
+```
+
+Windows PowerShell：
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+3. 安裝套件
+
+```bash
+pip install -r requirements.txt
+```
+
+4. 設定環境變數
+
+在專案根目錄建立 `.env`：
+
+```bash
+GEMINI_API_KEY=your_gemini_api_key
+SLACK_SIGNING_SECRET=your_slack_signing_secret
+DATABASE_URL=sqlite:///handoff.db
+```
+
+最小可啟動版本可以只放：
+
+```bash
+DATABASE_URL=sqlite:///handoff.db
+```
+
+如果沒有 `GEMINI_API_KEY`，AI 相關功能仍會有 mock fallback，但不會是真實 Gemini 結果。
+
+5. 啟動伺服器
+
+```bash
+python app.py
+```
+
+啟動後打開：
+
+```text
+http://localhost:5001
+```
+
 # HandOff
 
 HandOff 是一套「專案交接與工程知識管理系統」。它的目標是把團隊平常散落在 commit、Slack、筆記、決策間的連結與任務中的資訊整理成可追蹤的分支時間軸，最後可以產生交接報告，降低成員離開或輪調時的知識流失。
@@ -239,63 +304,6 @@ GitHub 與 Slack 匯入的資料都會先進入 Inbox，不會直接寫入 timel
 - **脈絡留存**：確保每一次的程式碼改動，都能在 GitHub 上找到對應的背景脈絡與討論紀錄。
 
 
-## 安裝與啟動
-
-### 1. 建立 Python virtual environment
-
-```bash
-python -m venv .venv
-```
-
-### 2. 啟用 virtual environment
-
-macOS / Linux：
-
-```bash
-. .venv/bin/activate
-```
-
-Windows PowerShell：
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-### 3. 安裝套件
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. 設定環境變數
-
-在專案根目錄建立 `.env`：
-
-```bash
-GEMINI_API_KEY=your_gemini_api_key
-SLACK_SIGNING_SECRET=your_slack_signing_secret
-DATABASE_URL=sqlite:///handoff.db
-```
-
-最小可啟動版本可以只放：
-
-```bash
-DATABASE_URL=sqlite:///handoff.db
-```
-
-如果沒有 `GEMINI_API_KEY`，AI 相關功能仍會有 mock fallback，但不會是真實 Gemini 結果。
-
-### 5. 啟動伺服器
-
-```bash
-python app.py
-```
-
-啟動後打開：
-
-```text
-http://localhost:5001
-```
 
 ## 功能設定說明
 
