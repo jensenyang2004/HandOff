@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_swagger_ui import get_swaggerui_blueprint
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -65,6 +66,24 @@ def create_app():
         from seed import seed_if_empty, seed_inbox_if_empty
         seed_if_empty()
         seed_inbox_if_empty()
+
+    # ── Swagger UI ───────────────────────────────────────────────────────────
+    SWAGGER_URL = '/api/docs'
+    API_URL = '/api/openapi.yaml'
+    swaggerui_blueprint = get_swaggerui_blueprint(
+        SWAGGER_URL,
+        API_URL,
+        config={'app_name': 'HandOff API'},
+    )
+    app.register_blueprint(swaggerui_blueprint)
+
+    @app.route('/api/openapi.yaml')
+    def openapi_spec():
+        return send_from_directory(
+            os.path.join(BASE_DIR, 'docs'),
+            'openapi.yaml',
+            mimetype='application/yaml',
+        )
 
     # ── Frontend ────────────────────────────────────────────────────────────
     @app.route('/')

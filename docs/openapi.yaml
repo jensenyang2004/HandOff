@@ -1,0 +1,1217 @@
+openapi: 3.0.3
+info:
+  title: HandOff API
+  description: |
+    HandOff 是一套「專案交接與工程知識管理系統」。
+
+    本 API 文件涵蓋所有後端 REST endpoint，包含：
+    - 專案與分支管理
+    - Timeline node 操作
+    - Inbox 審核流程（GitHub / Slack）
+    - AI 功能（Free log 解析、Branch context、Decision linking、Handover report）
+    - Webhook 接收（GitHub / Slack）
+  version: "1.0.0"
+  contact:
+    name: HandOff Team
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+tags:
+  - name: Project
+    description: 專案基本設定
+  - name: Auth
+    description: 使用者登入與註冊
+  - name: Users
+    description: 使用者列表
+  - name: Branches
+    description: 分支管理
+  - name: Nodes
+    description: Timeline node 管理
+  - name: Links
+    description: Node 關聯連結
+  - name: Contacts
+    description: 聯絡人管理
+  - name: Inbox
+    description: Inbox 審核機制
+  - name: Slack
+    description: Slack 訊息佇列與解析
+  - name: Webhooks
+    description: GitHub / Slack webhook 接收
+  - name: Activity
+    description: 最近活動摘要
+  - name: AI
+    description: Gemini AI 功能
+
+paths:
+  # ── Project ──────────────────────────────────────────────────────────────
+  /api/project:
+    get:
+      tags: [Project]
+      summary: 取得目前專案資訊
+      responses:
+        "200":
+          description: 專案物件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: 找不到專案
+    patch:
+      tags: [Project]
+      summary: 更新專案資訊
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context_doc:
+                  type: string
+                  description: 專案背景說明文字
+      responses:
+        "200":
+          description: 更新後的專案物件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  # ── Auth ─────────────────────────────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: 註冊新使用者
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  example: Jane Smith
+                email:
+                  type: string
+                  format: email
+                  example: jane@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: secret123
+                github_handle:
+                  type: string
+                  example: janesmith
+                slack_username:
+                  type: string
+                  example: jane
+      responses:
+        "201":
+          description: 建立成功，回傳使用者物件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: 缺少必要欄位或密碼太短
+        "409":
+          description: Email 已被使用
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 使用者登入
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jane@example.com
+                password:
+                  type: string
+                  example: secret123
+      responses:
+        "200":
+          description: 登入成功，回傳使用者物件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: 缺少必要欄位
+        "401":
+          description: 帳號或密碼錯誤
+
+  # ── Users ─────────────────────────────────────────────────────────────────
+  /api/users:
+    get:
+      tags: [Users]
+      summary: 列出所有使用者
+      responses:
+        "200":
+          description: 使用者陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  # ── Branches ─────────────────────────────────────────────────────────────
+  /api/branches:
+    get:
+      tags: [Branches]
+      summary: 列出所有未封存的分支
+      responses:
+        "200":
+          description: 分支陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Branch"
+    post:
+      tags: [Branches]
+      summary: 建立新分支
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: OCR Pipeline
+                created_by:
+                  type: string
+                  description: 使用者 ID
+                  example: jensen
+                parent_branch_id:
+                  type: integer
+                  nullable: true
+                context_doc:
+                  type: string
+                  example: Improve OCR accuracy on financial PDFs.
+      responses:
+        "201":
+          description: 建立成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+        "400":
+          description: 缺少 name
+
+  /api/branches/{branch_id}:
+    patch:
+      tags: [Branches]
+      summary: 更新分支資訊
+      parameters:
+        - $ref: "#/components/parameters/branchId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context_doc:
+                  type: string
+                running_summary:
+                  type: string
+                ai_context:
+                  type: string
+      responses:
+        "200":
+          description: 更新後的分支物件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+        "404":
+          description: 分支不存在
+
+  # ── Nodes ─────────────────────────────────────────────────────────────────
+  /api/nodes:
+    get:
+      tags: [Nodes]
+      summary: 列出 node（可依 branch_id 或 user_id 篩選）
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: integer
+          description: 篩選特定分支的 nodes
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: 篩選特定使用者建立或被指派的 nodes
+      responses:
+        "200":
+          description: Node 陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+    post:
+      tags: [Nodes]
+      summary: 建立新 node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch_id]
+              properties:
+                branch_id:
+                  type: integer
+                  example: 1
+                type:
+                  type: string
+                  enum: [commit, link, note, idea, task, decision, meeting, milestone]
+                  example: note
+                content:
+                  type: string
+                  example: Dropped threshold from 0.85 to 0.78
+                created_by:
+                  type: string
+                  example: jensen
+                metadata:
+                  type: object
+                  additionalProperties: true
+                  example:
+                    title: Threshold update
+                    body: Dropped threshold after seeing too many false negatives
+                assigned_to:
+                  type: string
+                  nullable: true
+                assignment_status:
+                  type: string
+                  enum: [pending, acknowledged, done]
+                  nullable: true
+                is_ai_generated:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: 建立成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "400":
+          description: 缺少 branch_id
+
+  /api/nodes/{node_id}:
+    patch:
+      tags: [Nodes]
+      summary: 更新 node 內容
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                assignment_status:
+                  type: string
+                  enum: [pending, acknowledged, done]
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: 更新後的 node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          description: Node 不存在
+
+  # ── Links ─────────────────────────────────────────────────────────────────
+  /api/links:
+    get:
+      tags: [Links]
+      summary: 列出所有 node 關聯
+      responses:
+        "200":
+          description: NodeLink 陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NodeLink"
+    post:
+      tags: [Links]
+      summary: 手動建立 node 關聯
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_id, to_id]
+              properties:
+                from_id:
+                  type: integer
+                  example: 3
+                to_id:
+                  type: integer
+                  example: 7
+                rel:
+                  type: string
+                  enum: [implements, validates, motivates, references]
+                  default: implements
+      responses:
+        "201":
+          description: 建立成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLink"
+
+  /api/links/{link_id}:
+    delete:
+      tags: [Links]
+      summary: 刪除 node 關聯
+      parameters:
+        - $ref: "#/components/parameters/linkId"
+      responses:
+        "200":
+          description: 刪除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          description: 關聯不存在
+
+  /api/links/{link_id}/confirm:
+    post:
+      tags: [Links]
+      summary: 確認 AI 建立的關聯
+      parameters:
+        - $ref: "#/components/parameters/linkId"
+      responses:
+        "200":
+          description: 確認後的關聯
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLink"
+
+  /api/links/{link_id}/reject:
+    post:
+      tags: [Links]
+      summary: 拒絕並刪除 AI 建立的關聯
+      parameters:
+        - $ref: "#/components/parameters/linkId"
+      responses:
+        "200":
+          description: 刪除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  # ── Contacts ──────────────────────────────────────────────────────────────
+  /api/contacts:
+    get:
+      tags: [Contacts]
+      summary: 列出所有聯絡人
+      responses:
+        "200":
+          description: 聯絡人陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+    post:
+      tags: [Contacts]
+      summary: 新增聯絡人
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Alice Huang
+                company:
+                  type: string
+                  example: Acme Corp
+                role:
+                  type: string
+                  example: CTO
+                email:
+                  type: string
+                  format: email
+                notes:
+                  type: string
+      responses:
+        "201":
+          description: 建立成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+
+  /api/contacts/{contact_id}:
+    patch:
+      tags: [Contacts]
+      summary: 更新聯絡人資訊
+      parameters:
+        - name: contact_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                company:
+                  type: string
+                role:
+                  type: string
+                email:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        "200":
+          description: 更新後的聯絡人
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    delete:
+      tags: [Contacts]
+      summary: 刪除聯絡人
+      parameters:
+        - name: contact_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 刪除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  # ── Inbox ─────────────────────────────────────────────────────────────────
+  /api/inbox:
+    get:
+      tags: [Inbox]
+      summary: 列出所有未 dismiss 的 Inbox 項目
+      responses:
+        "200":
+          description: InboxSuggestion 陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InboxSuggestion"
+
+  /api/inbox/{item_id}/dismiss:
+    post:
+      tags: [Inbox]
+      summary: Dismiss 一筆 Inbox 項目
+      parameters:
+        - $ref: "#/components/parameters/itemId"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /api/inbox/{item_id}/interpret:
+    post:
+      tags: [Inbox]
+      summary: 使用 AI 重新解析 Inbox 項目的 nodes
+      parameters:
+        - $ref: "#/components/parameters/itemId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch_slug:
+                  type: string
+                  example: ocr
+      responses:
+        "200":
+          description: 解析結果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ParsedNode"
+
+  # ── Slack ─────────────────────────────────────────────────────────────────
+  /api/inbox/slack/pending:
+    get:
+      tags: [Slack]
+      summary: 列出各 channel 尚未處理的 Slack 訊息
+      responses:
+        "200":
+          description: 各 channel 的 pending 訊息摘要
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    channel:
+                      type: string
+                      example: infra
+                    count:
+                      type: integer
+                      example: 14
+                    messages:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          time:
+                            type: string
+                          text:
+                            type: string
+
+  /api/inbox/slack/interpret:
+    post:
+      tags: [Slack]
+      summary: 將 channel 的 pending 訊息交給 AI 解析成 node suggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, branch_slug]
+              properties:
+                channel:
+                  type: string
+                  example: infra
+                branch_slug:
+                  type: string
+                  example: deploy
+      responses:
+        "200":
+          description: 訊息不含足夠資訊，未產生 suggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: "null"
+                  nodes:
+                    type: array
+                    items: {}
+        "201":
+          description: 產生 InboxSuggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: integer
+        "400":
+          description: 該 channel 沒有 pending 訊息
+
+  # ── Webhooks ──────────────────────────────────────────────────────────────
+  /api/webhook/github:
+    post:
+      tags: [Webhooks]
+      summary: 接收 GitHub push webhook
+      description: |
+        接收 GitHub push event，在 Inbox 建立一筆 Git commit suggestion。
+        可用 curl 進行本機測試，無需設定 signature。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ref, head_commit, pusher]
+              properties:
+                ref:
+                  type: string
+                  example: refs/heads/main
+                head_commit:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      example: a1b2c3d4e5f6
+                    message:
+                      type: string
+                      example: "fix: update handoff timeline"
+                    url:
+                      type: string
+                pusher:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: jensen-park
+                repository:
+                  type: object
+                  properties:
+                    full_name:
+                      type: string
+                      example: org/repo
+      responses:
+        "201":
+          description: 建立成功，回傳 inbox suggestion ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: integer
+        "400":
+          description: 缺少必要欄位
+
+  /api/webhook/slack:
+    post:
+      tags: [Webhooks]
+      summary: 接收 Slack 訊息 webhook
+      description: |
+        支援兩種格式：
+        1. Slack Events API (`event_callback` type)
+        2. 簡化自訂格式（見範例），用於本機 curl 測試
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - title: Simplified custom format
+                  type: object
+                  required: [channel, user, text]
+                  properties:
+                    channel:
+                      type: string
+                      example: infra
+                    user:
+                      type: string
+                      example: diego
+                    display_name:
+                      type: string
+                      example: Diego Torres
+                    text:
+                      type: string
+                      example: deployment is green again
+                    ts:
+                      type: string
+                      format: date-time
+                - title: Slack Events API format
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [event_callback, url_verification]
+                    event:
+                      type: object
+      responses:
+        "201":
+          description: 訊息已儲存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: integer
+        "400":
+          description: 缺少必要欄位
+        "401":
+          description: Slack 簽名驗證失敗
+
+  # ── Activity ──────────────────────────────────────────────────────────────
+  /api/activity:
+    get:
+      tags: [Activity]
+      summary: 取得最近活動的 node 列表
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: 最多回傳幾筆
+      responses:
+        "200":
+          description: 活動陣列（node + branch + user 資訊）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/Node"
+                    - type: object
+                      properties:
+                        branch_name:
+                          type: string
+                        branch_slug:
+                          type: string
+                        user_name:
+                          type: string
+                        user_color:
+                          type: string
+                        user_initials:
+                          type: string
+
+  # ── AI ────────────────────────────────────────────────────────────────────
+  /api/ai/parse-log:
+    post:
+      tags: [AI]
+      summary: 將自由文字解析成 structured nodes（Free log 解析）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch_id, text]
+              properties:
+                branch_id:
+                  type: integer
+                  example: 1
+                text:
+                  type: string
+                  example: "We decided to use PostgreSQL because SQLite will not scale."
+      responses:
+        "200":
+          description: 解析出的 node 陣列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParsedNode"
+
+  /api/ai/sync-context/{branch_id}:
+    post:
+      tags: [AI]
+      summary: 根據分支 nodes 重新產生 AI context
+      parameters:
+        - $ref: "#/components/parameters/branchId"
+      responses:
+        "200":
+          description: 更新後的分支（含新 ai_context）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
+  /api/ai/weekly-digest:
+    post:
+      tags: [AI]
+      summary: 產生使用者的一週工作摘要
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  example: jensen
+      responses:
+        "200":
+          description: 週報內容（AI 產生的 markdown 文字）
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/ai/handover:
+    post:
+      tags: [AI]
+      summary: 產生交接報告
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  example: jensen
+      responses:
+        "200":
+          description: 交接報告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source:
+                    type: string
+                    enum: [ai, heuristic]
+                  sections:
+                    type: array
+                    items: {}
+                  branch_data:
+                    type: array
+                    items: {}
+
+  /api/ai/link-decisions:
+    post:
+      tags: [AI]
+      summary: 為所有 decision nodes 觸發 AI 關聯建立
+      responses:
+        "200":
+          description: 觸發成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  count:
+                    type: integer
+                  status:
+                    type: string
+
+  /api/ai/link-decisions/{node_id}:
+    post:
+      tags: [AI]
+      summary: 為指定 decision node 重新觸發 AI 關聯建立
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 觸發成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  status:
+                    type: string
+        "400":
+          description: 指定的 node 不是 decision 類型
+
+  /api/ai/describe-link/{link_id}:
+    post:
+      tags: [AI]
+      summary: 用 AI 產生一句話說明兩個 node 的關聯原因
+      parameters:
+        - $ref: "#/components/parameters/linkId"
+      responses:
+        "200":
+          description: 關聯說明
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  description:
+                    type: string
+                    nullable: true
+                    example: "This commit directly implements the PostgreSQL migration decision."
+
+# ── Components ──────────────────────────────────────────────────────────────
+components:
+  parameters:
+    branchId:
+      name: branch_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: 分支 ID
+    linkId:
+      name: link_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: NodeLink ID
+    itemId:
+      name: item_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: InboxSuggestion ID
+
+  schemas:
+    Ok:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        context_doc:
+          type: string
+        nodes_since_last_link:
+          type: integer
+        last_linked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: jensen
+        name:
+          type: string
+          example: Jensen Park
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [employee, manager]
+        github_handle:
+          type: string
+        slack_username:
+          type: string
+        color:
+          type: string
+          example: "#7F77DD"
+        initials:
+          type: string
+          example: JP
+        departing:
+          type: boolean
+        last_day:
+          type: string
+          nullable: true
+
+    Branch:
+      type: object
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+          example: ocr
+        name:
+          type: string
+          example: OCR Pipeline
+        parent_branch_id:
+          type: integer
+          nullable: true
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        context_doc:
+          type: string
+        running_summary:
+          type: string
+        ai_context:
+          type: string
+        nodes_since_context_sync:
+          type: integer
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: integer
+        branch_id:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [commit, link, note, idea, task, decision, meeting, milestone]
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        assigned_to:
+          type: string
+          nullable: true
+        assignment_status:
+          type: string
+          enum: [pending, acknowledged, done]
+          nullable: true
+        is_ai_generated:
+          type: boolean
+
+    NodeLink:
+      type: object
+      properties:
+        id:
+          type: integer
+        from_id:
+          type: integer
+        to_id:
+          type: integer
+        rel:
+          type: string
+          example: implements
+        is_ai:
+          type: boolean
+        status:
+          type: string
+          enum: [pending, confirmed, rejected]
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        name:
+          type: string
+        company:
+          type: string
+        role:
+          type: string
+        email:
+          type: string
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    InboxSuggestion:
+      type: object
+      properties:
+        id:
+          type: integer
+        source:
+          type: string
+          enum: [git, slack]
+        title:
+          type: string
+        raw_text:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParsedNode"
+        branch_slug:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ParsedNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [commit, link, note, idea, task, decision, meeting, milestone]
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            title: Use PostgreSQL
+            body: We decided to use PostgreSQL because SQLite will not scale.
+            rationale: SQLite will not scale.

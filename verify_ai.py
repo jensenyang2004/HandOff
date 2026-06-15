@@ -1,6 +1,6 @@
 """
 Verify Gemini model availability and all AIService methods.
-Run: .venv/bin/python test_ai.py
+Run: .venv/bin/python verify_ai.py
 """
 import os, sys, json
 from dotenv import load_dotenv
