@@ -216,6 +216,29 @@ GitHub 與 Slack 匯入的資料都會先進入 Inbox，不會直接寫入 timel
 這讓管理者不需要逐一詢問成員，也能掌握專案脈絡。
 
 
+## 專案開發與管理
+
+我們利用 **GitHub Project Board** 來進行專案的敏捷開發與進度管理，將需求拆解為具體任務，並透過看板與 Pull Requests (PR) 進行狀態追蹤：
+
+### 1. 專案看板
+我們使用 GitHub Projects 建立Kanban，追蹤所有工作項目的生命週期。
+![Kanban Board](docs/Kanban.png)
+- **看板欄位**：包含 Todo (待處理)、In Progress (進行中) 以及 Done (已完成)。
+- **自動化關聯**：任務狀態會根據 PR 的連結與合併自動更新。
+
+### 2. GitHub Issues
+所有新功能、系統優化與 Bug 修正，都會建立為獨立的 Issue 進行討論與指派。
+![GitHub Issues](docs/Issues.png)
+- **任務分配**：指派負責的Assignee 確保職責分明。
+- **里程碑管理**：使用 Milestones 追蹤迭代進度，並透過 Labels 進行分類（如 Bug, Feat）。
+
+### 3. 分支管理與 Pull Requests
+我們採用 Git Flow 流程，所有的程式碼修改都必須透過 PR 進行審查，並與 Issue 進行雙向綁定。
+![Pull Requests](docs/PR1.png)
+- **PR 連結 Issue**：在 PR 合併時會自動將對應的 Issue 關閉。
+- **脈絡留存**：確保每一次的程式碼改動，都能在 GitHub 上找到對應的背景脈絡與討論紀錄。
+
+
 ## 安裝與啟動
 
 ### 1. 建立 Python virtual environment
