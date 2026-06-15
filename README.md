@@ -11,6 +11,7 @@ HandOff 是一套「專案交接與工程知識管理系統」。它的目標是
 - 如何啟動網站
 - 功能設定說明
 - Open API documentation
+- AI Documentation
 - 測試
 - 補充文件
 - User Stories Mapping
@@ -346,6 +347,39 @@ Event Subscriptions: Enable
 Request URL: https://你的-ngrok-url/api/webhook/slack
 Subscribe to bot events: message.channels 或需要的 message event
 ```
+## Open API Documentation
+
+本專案使用 [OpenAPI 3.0](docs/openapi.yaml) 規格文件，並整合 **Swagger UI** 提供互動式 API 瀏覽介面。
+
+啟動伺服器後，可以直接在瀏覽器打開：
+
+```text
+http://localhost:5001/api/docs/
+```
+
+介面涵蓋所有 API endpoint（共 27 支），依功能分成以下群組：
+
+| 群組 | 說明 |
+| --- | --- |
+| Project | 專案基本設定 |
+| Auth | 使用者登入與註冊 |
+| Users | 使用者列表 |
+| Branches | 分支管理 |
+| Nodes | Timeline node 管理 |
+| Links | Node 關聯連結 |
+| Contacts | 聯絡人管理 |
+| Inbox | Inbox 審核機制 |
+| Slack | Slack 訊息佇列與解析 |
+| Webhooks | GitHub / Slack webhook 接收 |
+| Activity | 最近活動摘要 |
+| AI | Gemini AI 功能 |
+
+原始 OpenAPI spec 存放在 [`docs/openapi.yaml`](docs/openapi.yaml)，也可以透過以下路徑取得：
+
+```text
+GET http://localhost:5001/api/openapi.yaml
+```
+
 ## AI Documentation
 ### AI 功能一覽
 
