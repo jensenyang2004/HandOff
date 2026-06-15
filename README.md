@@ -52,23 +52,61 @@ HandOff/
 ├── models.py                 # SQLAlchemy 資料庫模型
 ├── ai_service.py             # Gemini AI 呼叫與 prompt 設計
 ├── seed.py                   # 初始化 demo 資料
+├── verify_ai.py              # AI service 驗證腳本（獨立執行）
 ├── requirements.txt          # Python 套件需求
+├── run.sh                    # 一鍵啟動前後端的 shell 腳本
 ├── handoff.db                # 本機 SQLite 資料庫
 ├── frontend/                 # 主要前端程式
 │   ├── index.html            # 前端 HTML 入口
-│   ├── app.jsx               # 前端主 App
-│   ├── api.js                # 前端呼叫後端 API 的地方
-│   ├── timeline.jsx          # Timeline 畫面
+│   ├── app.jsx               # 前端主 App（路由與頁面切換）
+│   ├── api.js                # 前端呼叫後端 API 的統一介面
+│   ├── timeline.jsx          # Timeline 畫面（branch 時間軸與 node 管理）
 │   ├── personal-log.jsx      # My Log / Inbox 畫面
-│   ├── handover.jsx          # Handover 畫面
-│   ├── manager-dashboard.jsx # Manager dashboard
-│   ├── context.jsx           # Context 面板
+│   ├── handover.jsx          # Handover report 畫面
+│   ├── manager-dashboard.jsx # Manager dashboard（任務總覽）
+│   ├── context.jsx           # Branch context 面板
+│   ├── task-list.jsx         # 任務列表元件
+│   ├── tweaks-panel.jsx      # Node 編輯面板
+│   ├── icons.jsx             # 共用 icon 元件
 │   └── styles.css            # 前端樣式
-├── docs/                     # 補充規格文件
+├── docs/                     # 補充規格文件與圖表
+│   ├── ERD.png               # EER Diagram
+│   ├── wireframe.png         # Low-fidelity wireframe
+│   ├── openapi.yaml          # OpenAPI 3.0 規格文件
+│   ├── spec.md               # 系統規格與 context architecture
+│   ├── webhook-spec.md       # GitHub webhook 規格
+│   ├── slack-webhook-spec.md # Slack webhook 規格
+│   └── link_feat.md          # Decision linking 功能筆記
 └── test/                     # pytest 測試
+    ├── test_slack_interpret.py
+    ├── test_auth_and_branches.py
+    └── slack_test_messages/   # 測試用 Slack 訊息 fixtures
 ```
+
 ## EER Diagram
+
 ![image](docs/ERD.png)
+
+本專案資料庫共有 7 個主要 entity，以下說明各 entity 的職責與關聯：
+
+| Entity | 說明 |
+| --- | --- |
+| `Project` | 整個系統的頂層容器，儲存專案名稱與 AI context 文件 |
+| `User` | 使用者帳號，包含 GitHub handle、Slack username、角色（employee / manager） |
+| `Branch` | 工作分支，代表一條功能線或研究方向，屬於 Project，由 User 建立 |
+| `Node` | Timeline 上的工作記錄，屬於 Branch；包含 commit、note、decision、task 等多種類型 |
+| `NodeLink` | Node 之間的有向關聯（如「decision implements commit」），可由 AI 自動建立或人工確認 |
+| `Contact` | 專案相關的外部聯絡人，屬於 Project |
+| `InboxSuggestion` | 來自 GitHub / Slack 的待審核建議，審核後可轉為 Node |
+| `SlackMessage` | 從 Slack webhook 接收的原始訊息，pending 狀態由使用者觸發 AI 解析 |
+
+**主要關聯：**
+- `Branch` →（created_by）→ `User`；`Branch` 可以有 `parent_branch_id` 形成層級結構。
+- `Node` →（branch_id）→ `Branch`；`Node` →（created_by / assigned_to）→ `User`。
+- `NodeLink` →（from_id / to_id）→ `Node`，形成 node 間的有向圖。
+- `SlackMessage` →（user_id）→ `User`（nullable，未匹配到系統使用者時為空）。
+
+**設計考量：** `Node` 的 `metadata` 欄位採用 JSON 字串儲存，讓不同 type 的 node 可以攜帶各自所需的欄位（如 commit 需要 `hash`、reference 需要 `url`、idea 需要 `metric`），而不需要為每種 type 建立獨立資料表，降低 schema 維護成本並保留日後擴充彈性。
 
 ## 主要功能
 
@@ -576,10 +614,13 @@ test/test_slack_interpret.py::test_interpret_mixed_signal_thread SKIPPED (no API
 
 ## 補充文件
 
-- `docs/spec.md`：原始系統規格與 context architecture。
-- `docs/webhook-spec.md`：GitHub webhook 規格。
-- `docs/slack-webhook-spec.md`：Slack webhook 規格。
-- `docs/link_feat.md`：Decision linking 功能筆記。
+| 文件 | 說明 |
+| --- | --- |
+| [spec.md](docs/spec.md) | 原始系統規格與 context architecture 設計 |
+| [webhook-spec.md](docs/webhook-spec.md) | GitHub webhook payload 格式與接收流程 |
+| [slack-webhook-spec.md](docs/slack-webhook-spec.md) | Slack webhook 格式、簽名驗證與 pending 機制說明 |
+| [link_feat.md](docs/link_feat.md) | Decision linking 功能設計筆記 |
+| [openapi.yaml](docs/openapi.yaml) | OpenAPI 3.0 完整規格文件，可匯入 Swagger UI 或 Postman |
 
 ## User Stories Mapping
 
@@ -626,8 +667,25 @@ Step 6
 - Task 狀態追蹤
 - Handover report
 
-## Low fidelity Wireframes 
+## Low fidelity Wireframes
+
 ![image](docs/wireframe.png)
 
+Wireframe 呈現了 HandOff 的主要畫面佈局，各區塊功能如下：
 
+**左側 Sidebar**
+- Branch 列表：切換目前工作的分支；可新增 branch 或查看 branch context。
+- 導覽連結：切換至 Timeline、My Log、Manager Dashboard 或 Handover 頁面。
 
+**Timeline 主畫面**
+- 依時間軸顯示所選 branch 的所有 node（commit、note、decision、task 等）。
+- 點擊 node 可開啟詳細檢視，編輯 metadata 或查看 AI 產生的關聯。
+- 上方工具列提供手動新增 node、開啟 Free Log 輸入的入口。
+
+**Inbox 面板（My Log）**
+- 顯示來自 GitHub webhook 的 commit suggestion 與 Slack 的 pending messages。
+- 使用者可選擇目標 branch，按 Interpret 讓 AI 解析訊息內容，或 dismiss 不需要的項目。
+
+**Tweaks / Context 側欄**
+- 右側可開啟 Branch context 文件與 AI running summary 的預覽與編輯介面。
+- Tweaks Panel 提供 node 的快速屬性編輯（type、assigned_to、狀態等）。
