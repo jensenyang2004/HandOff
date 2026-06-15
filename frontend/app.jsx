@@ -130,8 +130,13 @@ function UserMenu({ currentUser, onLogout }) {
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
           <div className="pop-in" style={{
             position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 180, zIndex: 201,
-            background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10,
-            padding: 8, boxShadow: '0 14px 40px rgba(0,0,0,.5)',
+            background: 'rgba(20, 20, 25, 0.75)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: 10,
+            padding: 8,
+            boxShadow: '0 20px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,0.15)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px 10px' }}>
               <Avatar person={me} size={28} ring />
@@ -162,8 +167,99 @@ function OverdueBadge({ currentUser }) {
   );
 }
 
+// ── Global Inbox ───────────────────────────────────────────────────────────
+function GlobalInbox({ onRefresh, onGoTo }) {
+  const { useState, useEffect } = React;
+  const [inboxItems, setInboxItems] = useState([]);
+  const [inboxPending, setInboxPending] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const refreshInbox = () => {
+    window.API.getInbox()
+      .then(data => setInboxItems(Array.isArray(data) ? data : []))
+      .catch(() => {});
+    window.API.getSlackPending()
+      .then(data => setInboxPending(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshInbox();
+  }, []);
+
+  const totalInboxCount = inboxItems.length + inboxPending.length;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        className="btn"
+        onClick={() => setShowDropdown(!showDropdown)}
+        style={{
+          position: 'relative',
+          border: 'none',
+          background: showDropdown ? 'var(--surface)' : 'transparent',
+          borderRadius: 8,
+          padding: '6px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          cursor: 'pointer',
+          color: 'var(--text)'
+        }}
+      >
+        <Icon name="inbox" size={15} color="var(--text)" />
+        <span style={{ fontSize: 12.5, fontWeight: 500 }}>Inbox</span>
+        {totalInboxCount > 0 && (
+          <span style={{ marginLeft: 2, width: 16, height: 16, borderRadius: '50%', background: 'var(--purple)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            {totalInboxCount}
+          </span>
+        )}
+      </button>
+      
+      {showDropdown && window.InboxSection && (
+        <>
+          <div onClick={() => setShowDropdown(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
+          <div className="pop-in" style={{
+            position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 340, zIndex: 200,
+            background: 'rgba(20, 20, 25, 0.75)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: 12,
+            padding: 12,
+            boxShadow: '0 20px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,0.15)',
+            maxHeight: '70vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderBottom: '1px solid var(--border-soft)', paddingBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="inbox" size={15} color="var(--purple)" />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Inbox suggestions</span>
+              </div>
+            </div>
+            <div>
+              {React.createElement(window.InboxSection, {
+                isDropdown: true,
+                onNavigateToLog: () => {
+                  onGoTo('log');
+                  setShowDropdown(false);
+                },
+                items: inboxItems,
+                pending: inboxPending,
+                refresh: refreshInbox,
+                onDismiss: (id) => setInboxItems(prev => prev.filter(item => item.id !== id)),
+                onRefresh: () => { if(onRefresh) onRefresh(); refreshInbox(); }
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Persistent nav bar ─────────────────────────────────────────────────────
-function NavBar({ currentUser, onLogout, screen, onGoTo }) {
+function NavBar({ currentUser, onLogout, screen, onGoTo, onRefresh }) {
   const { PEOPLE, PROJECT } = window.HANDOFF;
   const me = PEOPLE[currentUser];
   const isManager = me && me.isManager;
@@ -210,6 +306,10 @@ function NavBar({ currentUser, onLogout, screen, onGoTo }) {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      <GlobalInbox onRefresh={onRefresh} onGoTo={onGoTo} />
+
+      <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 8px' }} />
 
       {/* Role pill */}
       <Pill color={isManager ? 'var(--blue)' : me && me.departing ? 'var(--red)' : 'var(--teal)'} style={{ fontSize: 10.5 }}>
@@ -292,7 +392,7 @@ function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <NavBar currentUser={currentUser} onLogout={handleLogout} screen={screen} onGoTo={goTo} />
+      <NavBar currentUser={currentUser} onLogout={handleLogout} screen={screen} onGoTo={goTo} onRefresh={refresh} />
 
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {screen === 'timeline' && (

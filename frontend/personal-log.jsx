@@ -1,6 +1,22 @@
 // personal-log.jsx — Screen: employee's vertical feed + free log + weekly digest
 const { useState: useStatePL, useEffect: useEffectPL, useRef: useRefPL, useMemo: useMemopl } = React;
 
+function getFLIPStyle(rect, targetWidth) {
+  if (!rect) return {};
+  const modalCenterX = window.innerWidth / 2;
+  const modalCenterY = window.innerHeight / 2;
+  const cardCenterX = rect.left + rect.width / 2;
+  const cardCenterY = rect.top + rect.height / 2;
+  const deltaX = cardCenterX - modalCenterX;
+  const deltaY = cardCenterY - modalCenterY;
+  const scaleFactor = rect.width / targetWidth;
+  return {
+    '--delta-x': `${deltaX}px`,
+    '--delta-y': `${deltaY}px`,
+    '--scale-factor': scaleFactor
+  };
+}
+
 // ── @ commit mention input ─────────────────────────────────────────────────
 function CommitMentionInput({ value, onChange, onKeyDown: outerKeyDown, style, placeholder, autoFocus }) {
   const { ENTRIES, LANES, CONTACTS, relTime } = window.HANDOFF;
@@ -153,12 +169,22 @@ function CommitMentionInput({ value, onChange, onKeyDown: outerKeyDown, style, p
 function FreeLogSection({ onRefresh }) {
   const { LANES, CURRENT_USER } = window.HANDOFF;
   const [open, setOpen] = useStatePL(false);
+  const [isClosing, setIsClosing] = useStatePL(false);
+  const [originRect, setOriginRect] = useStatePL(null);
   const [text, setText] = useStatePL('');
   const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
   const [phase, setPhase] = useStatePL('input');   // input | parsing | preview
   const [preview, setPreview] = useStatePL([]);
   const [saving, setSaving] = useStatePL(false);
   const [error, setError] = useStatePL(null);
+
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
 
   const parse = async () => {
     if (!text.trim() || !lane) return;
@@ -168,7 +194,7 @@ function FreeLogSection({ onRefresh }) {
     setError(null);
     try {
       const parsed = await API.parseLog(selectedLane.dbId, text);
-      setPreview(Array.isArray(parsed) ? parsed : []);
+      setPreview(Array.isArray(parsed) ? parsed.map(n => ({ ...n, selected: true })) : []);
       setPhase('preview');
     } catch (e) {
       setError('Parse failed — check backend connection.');
@@ -177,11 +203,12 @@ function FreeLogSection({ onRefresh }) {
   };
 
   const confirm = async () => {
-    if (!preview.length || saving) return;
+    const activeNodes = preview.filter(n => n.selected !== false);
+    if (!activeNodes.length || saving) return;
     const selectedLane = LANES.find(l => l.id === lane);
     if (!selectedLane) return;
     setSaving(true);
-    for (const node of preview) {
+    for (const node of activeNodes) {
       await API.addNode(selectedLane.dbId, {
         type: node.type,
         content: node.content || (node.metadata || {}).title || 'Untitled',
@@ -191,94 +218,118 @@ function FreeLogSection({ onRefresh }) {
       });
     }
     setSaving(false);
-    setText('');
-    setPreview([]);
-    setPhase('input');
-    setOpen(false);
+    close();
     onRefresh();
   };
 
   const reset = () => { setPhase('input'); setPreview([]); };
-  const close = () => { setOpen(false); setPhase('input'); setText(''); setPreview([]); setError(null); };
 
-  if (!open) return (
-    <button onClick={() => setOpen(true)}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 14px', marginBottom: 14, background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--muted-2)', fontSize: 13, cursor: 'pointer', transition: 'border-color .14s, color .14s' }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--purple)'; e.currentTarget.style.color = 'var(--text)'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--muted-2)'; }}>
-      <Icon name="sparkle" size={16} color="var(--purple)" />
-      <span>Paste anything — AI will parse it into entries</span>
-      <span style={{ marginLeft: 'auto', fontSize: 11.5 }}>Free log ↓</span>
-    </button>
-  );
+  const handleOpen = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setOriginRect(rect);
+    setOpen(true);
+    setIsClosing(false);
+  };
+
+  const close = () => {
+    setIsClosing(true);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setOpen(false);
+      setIsClosing(false);
+      setText('');
+      setPreview([]);
+      setError(null);
+      setPhase('input');
+      closeTimeoutRef.current = null;
+    }, 280);
+  };
 
   return (
-    <div className="card" style={{ padding: '16px', marginBottom: 18, animation: 'slideUp .16s ease both' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
+    <>
+      <button onClick={handleOpen}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 14px', marginBottom: 0, background: 'rgba(255, 255, 255, 0.03)', border: '1px dashed rgba(255, 255, 255, 0.15)', borderRadius: 10, color: 'var(--muted-2)', fontSize: 13, cursor: 'pointer', transition: 'all .14s' }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--purple)'; e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.color = 'var(--muted-2)'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'; }}>
         <Icon name="sparkle" size={16} color="var(--purple)" />
-        <span style={{ fontSize: 14, fontWeight: 600 }}>Free log</span>
-        {phase === 'preview' && <Pill color="var(--purple)">{preview.length} node{preview.length !== 1 ? 's' : ''} parsed</Pill>}
-        <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto', padding: 4 }} onClick={close}><Icon name="close" size={15} color="var(--muted-2)" /></button>
-      </div>
+        <span>Paste anything — AI will parse it into entries</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11.5 }}>Free log ↓</span>
+      </button>
 
-      {/* Input phase */}
-      {phase === 'input' && (
-        <>
-          <textarea value={text} onChange={e => setText(e.target.value)} autoFocus
-            placeholder={'Paste links, commit hashes, experiment results, or notes.\n\nAI will detect types and structure them. You can paste multiple items at once.'}
-            style={{ width: '100%', minHeight: 120, padding: '11px 13px', resize: 'vertical', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 13, lineHeight: 1.65, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 12 }} />
-          {error && <div style={{ fontSize: 12.5, color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Lane</span>
-            <div style={{ position: 'relative' }}>
-              <select value={lane} onChange={e => setLane(e.target.value)} style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 30px 7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }}>
-                {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-              <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><Icon name="chevDown" size={14} color="var(--muted)" /></span>
+      {open && (
+        <div className={`liquid-glass-overlay ${isClosing ? 'closing' : ''}`}>
+          <div onClick={close} style={{ position: 'absolute', inset: 0 }} />
+          <div className={`liquid-glass-modal ${isClosing ? 'closing' : 'opening'}`}
+            style={{ ...getFLIPStyle(originRect, 680), padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18, flexShrink: 0 }}>
+              <Icon name="sparkle" size={18} color="var(--purple)" />
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Free log parser</span>
+              {phase === 'preview' && <Pill color="var(--purple)">{preview.filter(n => n.selected !== false).length} of {preview.length} selected</Pill>}
+              <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto', padding: 6 }} onClick={close}><Icon name="close" size={18} color="var(--muted-2)" /></button>
             </div>
-            <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={close}>Cancel</button>
-            <button className="btn btn-primary" onClick={parse} disabled={!text.trim()}>
-              <Icon name="sparkle" size={14} /> Parse with AI →
-            </button>
-          </div>
-        </>
-      )}
 
-      {/* Parsing spinner */}
-      {phase === 'parsing' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '24px 8px' }}>
-          <div style={{ width: 28, height: 28, border: '2.5px solid var(--border)', borderTopColor: 'var(--purple)', borderRadius: '50%', animation: 'spin .8s linear infinite', flex: '0 0 auto' }} />
-          <span style={{ fontSize: 13, color: 'var(--muted)' }}>Parsing with Gemini…</span>
+            {/* Input phase */}
+            {phase === 'input' && (
+              <>
+                <textarea value={text} autoFocus
+                  onChange={e => setText(e.target.value)}
+                  placeholder={'Paste links, commit hashes, experiment results, or notes.\n\nAI will detect types and structure them. You can paste multiple items at once.'}
+                  style={{ width: '100%', flex: 1, minHeight: 180, padding: '14px 16px', resize: 'none', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 13.5, lineHeight: 1.65, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 16 }} />
+                {error && <div style={{ fontSize: 13, color: 'var(--red)', marginBottom: 12 }}>{error}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>Lane</span>
+                  <div style={{ position: 'relative' }}>
+                    <select value={lane} onChange={e => setLane(e.target.value)} style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 30px 7px 11px', color: 'var(--text)', fontSize: 13, outline: 'none' }}>
+                      {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                    <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><Icon name="chevDown" size={14} color="var(--muted)" /></span>
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  <button className="btn btn-ghost" onClick={close} style={{ padding: '8px 16px' }}>Cancel</button>
+                  <button className="btn btn-primary" onClick={parse} disabled={!text.trim()} style={{ padding: '8px 18px' }}>
+                    <Icon name="sparkle" size={14} /> Parse with AI →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Parsing spinner */}
+            {phase === 'parsing' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: '40px 0' }}>
+                <div style={{ width: 36, height: 36, border: '3px solid var(--border)', borderTopColor: 'var(--purple)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
+                <span style={{ fontSize: 14, color: 'var(--muted)' }}>Parsing with Gemini AI…</span>
+              </div>
+            )}
+
+            {/* Preview phase */}
+            {phase === 'preview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+                  Review parsed entries — remove any you don't want, then confirm.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', flex: 1, marginBottom: 16, paddingRight: 4 }}>
+                  {preview.length === 0 ? (
+                    <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: '20px 0', textAlign: 'center' }}>All entries removed.</div>
+                  ) : preview.map((node, i) => (
+                    <ParsedNodeCard key={i} node={node}
+                      onChange={(updatedNode) => setPreview(p => p.map((item, idx) => idx === i ? updatedNode : item))}
+                      onRemove={() => setPreview(p => p.filter((_, j) => j !== i))} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 9, flexShrink: 0 }}>
+                  <button className="btn btn-ghost" onClick={reset}>← Re-parse</button>
+                  <div style={{ flex: 1 }} />
+                  <button className="btn btn-ghost" onClick={close}>Cancel</button>
+                  <button className="btn btn-primary" onClick={confirm} disabled={saving || preview.filter(n => n.selected !== false).length === 0}>
+                    {saving ? 'Saving…' : `Add ${preview.filter(n => n.selected !== false).length} entr${preview.filter(n => n.selected !== false).length !== 1 ? 'ies' : 'y'} →`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
-
-      {/* Preview phase */}
-      {phase === 'preview' && (
-        <>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-            Review parsed entries — remove any you don't want, then confirm.
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 14 }}>
-            {preview.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>All entries removed.</div>
-            ) : preview.map((node, i) => (
-              <ParsedNodeCard key={i} node={node}
-                onRemove={() => setPreview(p => p.filter((_, j) => j !== i))}
-                onEdit={updated => setPreview(p => p.map((n, j) => j === i ? updated : n))} />
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 9 }}>
-            <button className="btn btn-ghost" onClick={reset}>← Re-parse</button>
-            <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={close}>Cancel</button>
-            <button className="btn btn-primary" onClick={confirm} disabled={saving || preview.length === 0}>
-              {saving ? 'Saving…' : `Add ${preview.length} entr${preview.length !== 1 ? 'ies' : 'y'} →`}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -344,7 +395,7 @@ function QuickAddBar({ onRefresh }) {
   };
 
   return (
-    <div className="card" style={{ padding: det ? '14px 16px 16px' : '4px 6px', marginBottom: 12, transition: 'padding .15s' }}>
+    <div className="glass-card" style={{ padding: det ? '14px 16px 16px' : '4px 6px', transition: 'padding .15s' }}>
       {/* Main input row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: det ? '0 0 12px' : '6px 8px' }}>
         <span style={{ color: m ? m.color : 'var(--muted)', display: 'inline-flex', flex: '0 0 auto', paddingTop: 8 }}>
@@ -427,7 +478,7 @@ function parseSlackMessages(rawText) {
 }
 
 // ── Inbox: Git commit banner ───────────────────────────────────────────────
-function GitBanner({ item, onDismiss, onRefresh }) {
+function GitBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) {
   const { LANES, CURRENT_USER } = window.HANDOFF;
   const [nodes, setNodes] = useStatePL(item.nodes || []);
   const [interpreted, setInterpreted] = useStatePL(false);
@@ -440,6 +491,58 @@ function GitBanner({ item, onDismiss, onRefresh }) {
     return l ? l.id : (LANES[0] ? LANES[0].id : '');
   });
   const [saving, setSaving] = useStatePL(false);
+  const [expanded, setExpanded] = useStatePL(false);
+  const [isClosing, setIsClosing] = useStatePL(false);
+  const [originRect, setOriginRect] = useStatePL(null);
+
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
+  const handleOpen = (e) => {
+    if (isDropdown) {
+      window.autoOpenInboxId = item.id;
+      if (onNavigateToLog) onNavigateToLog();
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setOriginRect(rect);
+    setExpanded(true);
+    setIsClosing(false);
+  };
+
+  useEffectPL(() => {
+    if (!isDropdown && window.autoOpenInboxId === item.id) {
+      window.autoOpenInboxId = null;
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
+        const el = document.getElementById(`inbox-card-${item.id}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setOriginRect(rect);
+          setExpanded(true);
+          setIsClosing(false);
+        }
+        autoOpenTimeoutRef.current = null;
+      }, 120);
+    }
+  }, [isDropdown, item.id]);
+
+  const close = () => {
+    setIsClosing(true);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setExpanded(false);
+      setIsClosing(false);
+      closeTimeoutRef.current = null;
+    }, 280);
+  };
 
   const interpretWithAI = async () => {
     if (interpreting) return;
@@ -469,61 +572,85 @@ function GitBanner({ item, onDismiss, onRefresh }) {
     setSaving(false);
     onRefresh();
     onDismiss(item.id);
+    close();
   };
 
-  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); };
+  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); close(); };
 
   return (
-    <div style={{ marginBottom: 10, border: '1px solid #1D9E7555', background: '#1D9E751a', borderRadius: 12, padding: '13px 15px', animation: 'slideUp .2s ease both' }}>
-      {/* Commit header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
-        <Icon name="github" size={17} color="var(--teal)" />
-        <span className="mono" style={{ fontSize: 13, color: 'var(--teal)', flex: '0 0 auto' }}>{meta.hash}</span>
-        <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>pushed just now</span>
+    <>
+      <div
+        id={isDropdown ? undefined : `inbox-card-${item.id}`}
+        style={{
+          marginBottom: 10,
+          border: '1px solid rgba(29, 158, 117, 0.15)',
+          background: 'rgba(29, 158, 117, 0.04)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          animation: 'slideUp .2s ease both',
+          cursor: 'pointer'
+        }}
+        className="glass-card-hover"
+        onClick={handleOpen}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 15px' }}>
+          <Icon name="github" size={17} color="var(--teal)" />
+          <span className="mono" style={{ fontSize: 12, color: 'var(--teal)', flex: '0 0 auto' }}>{meta.hash}</span>
+          <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</span>
+          <Icon name="chevDown" size={14} color="var(--muted)" style={{ flex: '0 0 auto', transform: 'rotate(-90deg)', marginLeft: 4 }} />
+        </div>
       </div>
 
-      {/* AI-extracted nodes (after Interpret) */}
-      {interpreted && (
-        <div style={{ marginBottom: 11 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8 }}>
-            {nodes.length} node{nodes.length !== 1 ? 's' : ''} extracted — remove any you don't need
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {nodes.length === 0
-              ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
-              : nodes.map((n, i) => (
-                  <ParsedNodeCard key={i} node={n}
-                    onRemove={() => setNodes(p => p.filter((_, j) => j !== i))}
-                    onEdit={updated => setNodes(p => p.map((m, j) => j === i ? updated : m))} />
-                ))}
+      {expanded && (
+        <div className={`liquid-glass-overlay ${isClosing ? 'closing' : ''}`}>
+          <div onClick={close} style={{ position: 'absolute', inset: 0 }} />
+          <div className={`liquid-glass-modal ${isClosing ? 'closing' : 'opening'}`}
+            style={{ ...getFLIPStyle(originRect, 680), padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18, flexShrink: 0 }}>
+              <Icon name="github" size={18} color="var(--teal)" />
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Git commit suggestion</span>
+              <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto', padding: 6 }} onClick={close}><Icon name="close" size={18} color="var(--muted-2)" /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', minHeight: 0, marginBottom: 18, paddingRight: 4 }}>
+              <div style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span className="mono" style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 'bold' }}>{meta.hash}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>pushed just now</span>
+                </div>
+                <div style={{ fontSize: 14, color: '#e2e2e8', lineHeight: 1.5 }}>{meta.title}</div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 500 }}>Note (optional)</label>
+                <input value={note} onChange={e => setNote(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && save()}
+                  placeholder="Add a note about this commit… (optional)"
+                  style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', color: 'var(--text)', fontSize: 13.5, outline: 'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>Lane</span>
+              <div style={{ position: 'relative' }}>
+                <select value={lane} onChange={e => setLane(e.target.value)}
+                  style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 30px 7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }}>
+                  {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+                <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><Icon name="chevDown" size={14} color="var(--muted)" /></span>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-ghost" style={{ padding: '8px 16px' }} onClick={skip}>Skip</button>
+              <button className="btn btn-primary" style={{ padding: '8px 18px' }} disabled={saving} onClick={save}>
+                {saving ? 'Saving…' : 'Add to log →'}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Note + lane + actions */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {!interpreted && (
-          <input value={note} onChange={e => setNote(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && save()}
-            placeholder="Add a note about this commit… (optional)"
-            style={{ flex: 1, minWidth: 200, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
-        )}
-        <select value={lane} onChange={e => setLane(e.target.value)}
-          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: interpreted ? '1' : '0 0 auto' }}>
-          {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
-        {!interpreted && (
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} disabled={interpreting} onClick={interpretWithAI}>
-            {interpreting ? 'Interpreting…' : 'Interpret with AI ✨'}
-          </button>
-        )}
-        <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={skip}>Skip</button>
-        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={saving || !nodes.length} onClick={save}>
-          {saving ? 'Saving…' : interpreted ? `Add ${nodes.length} entr${nodes.length !== 1 ? 'ies' : 'y'} →` : 'Add to log →'}
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -554,23 +681,75 @@ function SlackMessageLog({ messages }) {
 }
 
 // ── Inbox: Slack message banner ────────────────────────────────────────────
-function SlackBanner({ item, onDismiss, onRefresh }) {
+function SlackBanner({ item, onDismiss, onRefresh, isDropdown, onNavigateToLog }) {
   const { LANES, CURRENT_USER, TYPE_META } = window.HANDOFF;
-  const [nodes, setNodes] = useStatePL(item.nodes || []);
+  const [nodes, setNodes] = useStatePL(() => (item.nodes || []).map(n => ({ ...n, selected: true })));
   const [lane, setLane] = useStatePL(() => {
     const l = LANES.find(l => l.id === item.branch_slug);
     return l ? l.id : (LANES[0] ? LANES[0].id : '');
   });
   const [expanded, setExpanded] = useStatePL(false);
+  const [isClosing, setIsClosing] = useStatePL(false);
+  const [originRect, setOriginRect] = useStatePL(null);
   const [saving, setSaving] = useStatePL(false);
   const messages = parseSlackMessages(item.raw_text);
 
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
+  const handleOpen = (e) => {
+    if (isDropdown) {
+      window.autoOpenInboxId = item.id;
+      if (onNavigateToLog) onNavigateToLog();
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setOriginRect(rect);
+    setExpanded(true);
+    setIsClosing(false);
+  };
+
+  useEffectPL(() => {
+    if (!isDropdown && window.autoOpenInboxId === item.id) {
+      window.autoOpenInboxId = null;
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
+        const el = document.getElementById(`inbox-card-${item.id}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setOriginRect(rect);
+          setExpanded(true);
+          setIsClosing(false);
+        }
+        autoOpenTimeoutRef.current = null;
+      }, 120);
+    }
+  }, [isDropdown, item.id]);
+
+  const close = () => {
+    setIsClosing(true);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setExpanded(false);
+      setIsClosing(false);
+      closeTimeoutRef.current = null;
+    }, 280);
+  };
+
   const save = async () => {
-    if (saving || !nodes.length) return;
+    const activeNodes = nodes.filter(n => n.selected !== false);
+    if (saving || !activeNodes.length) return;
     const selectedLane = LANES.find(l => l.id === lane);
     if (!selectedLane) return;
     setSaving(true);
-    for (const n of nodes) {
+    for (const n of activeNodes) {
       await API.addNode(selectedLane.dbId, {
         type: n.type, content: n.content, created_by: CURRENT_USER,
         metadata: n.metadata || {}, is_ai_generated: true,
@@ -580,9 +759,10 @@ function SlackBanner({ item, onDismiss, onRefresh }) {
     setSaving(false);
     onRefresh();
     onDismiss(item.id);
+    close();
   };
 
-  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); };
+  const skip = async () => { await API.dismissInbox(item.id); onDismiss(item.id); close(); };
 
   const dotColors = nodes.map(n => {
     const ft = n.type === 'idea' ? 'experiment' : n.type === 'link' ? 'reference' : n.type;
@@ -590,75 +770,180 @@ function SlackBanner({ item, onDismiss, onRefresh }) {
   });
 
   return (
-    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, overflow: 'hidden', animation: 'slideUp .2s ease both' }}>
-      {/* Always-visible header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 15px', cursor: 'pointer' }}
-        onClick={() => setExpanded(e => !e)}>
-        <Icon name="slack" size={17} color="var(--purple)" />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#d6d6dd' }}>Slack messages detected</div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{item.title}</div>
+    <>
+      <div
+        id={isDropdown ? undefined : `inbox-card-${item.id}`}
+        style={{
+          marginBottom: 10,
+          border: '1px solid rgba(127, 119, 221, 0.15)',
+          background: 'rgba(127, 119, 221, 0.04)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          animation: 'slideUp .2s ease both',
+          cursor: 'pointer'
+        }}
+        className="glass-card-hover"
+        onClick={handleOpen}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 15px' }}>
+          <Icon name="slack" size={17} color="var(--purple)" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#d6d6dd' }}>Slack messages detected</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{item.title}</div>
+          </div>
+          {/* Colored dot preview */}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: '0 0 auto' }}>
+            {dotColors.map((c, i) => <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />)}
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 4 }}>{nodes.length} items</span>
+          </div>
+          <Icon name="chevDown" size={14} color="var(--muted)" style={{ flex: '0 0 auto', transform: 'rotate(-90deg)', marginLeft: 4 }} />
         </div>
-        {/* Colored dot preview */}
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: '0 0 auto' }}>
-          {dotColors.map((c, i) => <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />)}
-          <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 4 }}>{nodes.length} items</span>
-        </div>
-        {!expanded && (
-          <button className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 9px', flex: '0 0 auto' }}
-            onClick={e => { e.stopPropagation(); skip(); }}>Skip</button>
-        )}
-        <Icon name="chevDown" size={14} color="var(--muted)"
-          style={{ flex: '0 0 auto', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
-        <div style={{ padding: '0 15px 14px', borderTop: '1px solid #7F77DD1a' }}>
-          {/* Slack message log */}
-          <SlackMessageLog messages={messages} />
+        <div className={`liquid-glass-overlay ${isClosing ? 'closing' : ''}`}>
+          <div onClick={close} style={{ position: 'absolute', inset: 0 }} />
+          <div className={`liquid-glass-modal ${isClosing ? 'closing' : 'opening'}`}
+            style={{ ...getFLIPStyle(originRect, 840), width: 840, padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 16, flexShrink: 0 }}>
+              <Icon name="slack" size={18} color="var(--purple)" />
+              <div>
+                <span style={{ fontSize: 16, fontWeight: 600 }}>Slack messages suggestion</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 10 }}>{item.title}</span>
+              </div>
+              <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto', padding: 6 }} onClick={close}><Icon name="close" size={18} color="var(--muted-2)" /></button>
+            </div>
 
-          {/* Extracted nodes */}
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8 }}>
-            {nodes.length} node{nodes.length !== 1 ? 's' : ''} extracted — remove any you don't need
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 13 }}>
-            {nodes.length === 0
-              ? <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>All removed.</div>
-              : nodes.map((n, i) => (
-                  <ParsedNodeCard key={i} node={n}
-                    onRemove={() => setNodes(p => p.filter((_, j) => j !== i))}
-                    onEdit={updated => setNodes(p => p.map((m, j) => j === i ? updated : m))} />
-                ))}
-          </div>
+            {/* Split Modal Content */}
+            <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, marginBottom: 18 }}>
+              {/* Left Column: Slack message log */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8, fontWeight: 600 }}>
+                  Original Slack Messages
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px' }}>
+                  {messages.map((m, i) => {
+                    const initials = m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                    const hue = (m.name.charCodeAt(0) * 37 + m.name.charCodeAt(m.name.length - 1) * 13) % 360;
+                    return (
+                      <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < messages.length - 1 ? 12 : 0 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 6, background: `hsl(${hue},35%,22%)`, border: `1px solid hsl(${hue},40%,32%)`, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: `hsl(${hue},55%,65%)` }}>
+                           {initials}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', marginBottom: 2 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#d6d6dd' }}>{m.name.split(' ')[0]}</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{m.time}</span>
+                          </div>
+                          <div style={{ fontSize: 13, color: '#b0b0c0', lineHeight: 1.55, wordBreak: 'break-word' }}>{m.text}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Lane + actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Lane</span>
-            <select value={lane} onChange={e => setLane(e.target.value)}
-              style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none' }}>
-              {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={skip}>Skip all</button>
-            <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={saving || !nodes.length} onClick={save}>
-              {saving ? 'Adding…' : `Add ${nodes.length} entr${nodes.length !== 1 ? 'ies' : 'y'} →`}
-            </button>
+              {/* Right Column: Extracted nodes */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', marginBottom: 8, fontWeight: 600 }}>
+                  {nodes.length === 0 ? 'All removed' : `${nodes.filter(n => n.selected !== false).length} selected of ${nodes.length}`}
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4 }}>
+                  {nodes.length === 0
+                    ? <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>All removed.</div>
+                    : nodes.map((n, i) => (
+                        <ParsedNodeCard key={i} node={n}
+                          onChange={(updatedNode) => setNodes(p => p.map((item, idx) => idx === i ? updatedNode : item))}
+                          onRemove={() => setNodes(p => p.filter((_, j) => j !== i))} />
+                      ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Lane + actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>Lane</span>
+              <div style={{ position: 'relative' }}>
+                <select value={lane} onChange={e => setLane(e.target.value)}
+                  style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 30px 7px 11px', color: 'var(--text)', fontSize: 12.5, outline: 'none' }}>
+                  {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+                <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><Icon name="chevDown" size={14} color="var(--muted)" /></span>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-ghost" style={{ padding: '8px 16px' }} onClick={skip}>Skip all</button>
+              <button className="btn btn-primary" style={{ padding: '8px 18px' }} disabled={saving || !nodes.filter(n => n.selected !== false).length} onClick={save}>
+                {saving ? 'Adding…' : `Add ${nodes.filter(n => n.selected !== false).length} entr${nodes.filter(n => n.selected !== false).length !== 1 ? 'ies' : 'y'} →`}
+              </button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 // ── Inbox: pending Slack messages banner (not yet interpreted) ──────────────
-function SlackPendingBanner({ pending, onInterpreted }) {
+function SlackPendingBanner({ pending, onInterpreted, isDropdown, onNavigateToLog }) {
   const { LANES } = window.HANDOFF;
   const [lane, setLane] = useStatePL(LANES[0] ? LANES[0].id : '');
   const [working, setWorking] = useStatePL(false);
   const [emptyResult, setEmptyResult] = useStatePL(false);
   const [expanded, setExpanded] = useStatePL(false);
+  const [isClosing, setIsClosing] = useStatePL(false);
+  const [originRect, setOriginRect] = useStatePL(null);
   const messages = pending.messages || [];
+
+  const autoOpenTimeoutRef = useRefPL(null);
+  const closeTimeoutRef = useRefPL(null);
+
+  useEffectPL(() => {
+    return () => {
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
+  const handleOpen = (e) => {
+    if (isDropdown) {
+      window.autoOpenSlackChannel = pending.channel;
+      if (onNavigateToLog) onNavigateToLog();
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setOriginRect(rect);
+    setExpanded(true);
+    setIsClosing(false);
+  };
+
+  useEffectPL(() => {
+    if (!isDropdown && window.autoOpenSlackChannel === pending.channel) {
+      window.autoOpenSlackChannel = null;
+      if (autoOpenTimeoutRef.current) clearTimeout(autoOpenTimeoutRef.current);
+      autoOpenTimeoutRef.current = setTimeout(() => {
+        const el = document.getElementById(`inbox-pending-${pending.channel}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setOriginRect(rect);
+          setExpanded(true);
+          setIsClosing(false);
+        }
+        autoOpenTimeoutRef.current = null;
+      }, 120);
+    }
+  }, [isDropdown, pending.channel]);
+
+  const close = () => {
+    setIsClosing(true);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setExpanded(false);
+      setIsClosing(false);
+      closeTimeoutRef.current = null;
+    }, 280);
+  };
 
   const interpret = async () => {
     if (working || !lane) return;
@@ -671,70 +956,95 @@ function SlackPendingBanner({ pending, onInterpreted }) {
       return;
     }
     onInterpreted();
+    close();
   };
 
   return (
-    <div style={{ marginBottom: 10, border: '1px solid #7F77DD44', background: '#7F77DD0c', borderRadius: 12, overflow: 'hidden', animation: 'slideUp .2s ease both' }}>
-      <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', cursor: 'pointer' }}
-        onClick={() => setExpanded(e => !e)}>
-        <Icon name="slack" size={17} color="var(--purple)" />
-        <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, minWidth: 160 }}>
-          {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
-          {emptyResult && (
-            <span style={{ color: 'var(--muted)', fontStyle: 'italic', marginLeft: 8 }}>
-              — no noteworthy updates found, left for next time
-            </span>
-          )}
-        </span>
-        <select value={lane} onChange={e => setLane(e.target.value)} onClick={e => e.stopPropagation()}
-          style={{ appearance: 'none', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', color: 'var(--text)', fontSize: 12, outline: 'none', flex: '0 0 auto' }}>
-          {LANES.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
-        <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 13px' }} disabled={working}
-          onClick={e => { e.stopPropagation(); interpret(); }}>
-          {working ? 'Interpreting…' : 'Interpret'}
-        </button>
-        <Icon name="chevDown" size={14} color="var(--muted)"
-          style={{ flex: '0 0 auto', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+    <>
+      <div
+        id={isDropdown ? undefined : `inbox-pending-${pending.channel}`}
+        style={{
+          marginBottom: 10,
+          border: '1px solid rgba(127, 119, 221, 0.15)',
+          background: 'rgba(127, 119, 221, 0.04)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          animation: 'slideUp .2s ease both',
+          cursor: 'pointer'
+        }}
+        className="glass-card-hover"
+        onClick={handleOpen}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 15px' }}>
+          <Icon name="slack" size={17} color="var(--purple)" />
+          <span style={{ fontSize: 13, color: '#d6d6dd', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {pending.count} new message{pending.count !== 1 ? 's' : ''} in <b>#{pending.channel}</b>
+          </span>
+          <Icon name="chevDown" size={14} color="var(--muted)" style={{ flex: '0 0 auto', transform: 'rotate(-90deg)', marginLeft: 4 }} />
+        </div>
       </div>
 
       {expanded && (
-        <div style={{ padding: '0 15px 14px', borderTop: '1px solid #7F77DD1a' }}>
-          <SlackMessageLog messages={messages} />
+        <div className={`liquid-glass-overlay ${isClosing ? 'closing' : ''}`}>
+          <div onClick={close} style={{ position: 'absolute', inset: 0 }} />
+          <div className={`liquid-glass-modal ${isClosing ? 'closing' : 'opening'}`}
+            style={{ ...getFLIPStyle(originRect, 680), padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18, flexShrink: 0 }}>
+              <Icon name="slack" size={18} color="var(--purple)" />
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Interpret Slack Channel</span>
+              <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto', padding: 6 }} onClick={close}><Icon name="close" size={18} color="var(--muted-2)" /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', minHeight: 0, marginBottom: 18, paddingRight: 4 }}>
+              <div style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px', marginBottom: 16 }}>
+                <span style={{ fontSize: 14, color: '#e2e2e8', lineHeight: 1.5 }}>
+                  There are <b>{pending.count}</b> uninterpreted message{pending.count !== 1 ? 's' : ''} in the Slack channel <b>#{pending.channel}</b>.
+                  <br /><br />
+                  Gemini AI will analyze the messages, extract tasks, commits, ideas, and decisions, and suggest them for your logs.
+                </span>
+              </div>
+              {emptyResult && (
+                <div style={{ fontSize: 12.5, color: 'var(--amber)', marginBottom: 12, padding: '8px 11px', background: '#EF9F270d', borderRadius: 7 }}>
+                  No noteworthy updates found, left for next time.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-ghost" style={{ padding: '8px 16px' }} onClick={close}>Cancel</button>
+              <button className="btn btn-primary" style={{ padding: '8px 18px' }} disabled={working} onClick={interpret}>
+                {working ? 'Interpreting…' : 'Interpret with AI →'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-// ── Inbox section (fetches git + slack suggestions) ────────────────────────
-function InboxSection({ onRefresh }) {
-  const [items, setItems] = useStatePL([]);
-  const [pending, setPending] = useStatePL([]);
-
-  const refresh = () => {
-    API.getInbox()
-      .then(data => setItems(Array.isArray(data) ? data : []))
-      .catch(() => {});
-    API.getSlackPending()
-      .then(data => setPending(Array.isArray(data) ? data : []))
-      .catch(() => {});
-  };
-
-  useEffectPL(() => { refresh(); }, []);
-
-  const dismiss = (id) => setItems(prev => prev.filter(item => item.id !== id));
-  if (!items.length && !pending.length) return null;
+// ── Inbox section (rendered inside dropdown) ────────────────────────
+function InboxSection({ items, pending, refresh, onDismiss, onRefresh, isDropdown, onNavigateToLog }) {
+  if (!items.length && !pending.length) {
+    return (
+      <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic', textAlign: 'center', padding: '24px 8px' }}>
+        No suggestions. Your inbox is clear!
+      </div>
+    );
+  }
 
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {pending.map(p =>
-        <SlackPendingBanner key={p.channel} pending={p} onInterpreted={refresh} />
+        <SlackPendingBanner key={p.channel} pending={p} onInterpreted={refresh} isDropdown={isDropdown} onNavigateToLog={onNavigateToLog} />
       )}
       {items.map(item =>
         item.source === 'git'
-          ? <GitBanner key={item.id} item={item} onDismiss={dismiss} onRefresh={onRefresh} />
-          : <SlackBanner key={item.id} item={item} onDismiss={dismiss} onRefresh={onRefresh} />
+          ? <GitBanner key={item.id} item={item} onDismiss={onDismiss} onRefresh={onRefresh} isDropdown={isDropdown} onNavigateToLog={onNavigateToLog} />
+          : <SlackBanner key={item.id} item={item} onDismiss={onDismiss} onRefresh={onRefresh} isDropdown={isDropdown} onNavigateToLog={onNavigateToLog} />
       )}
     </div>
   );
@@ -744,11 +1054,20 @@ function InboxSection({ onRefresh }) {
 function LogCard({ e }) {
   const { TYPE_META, LANES, relTime } = window.HANDOFF;
   const [hover, setHover] = useStatePL(false);
-  const m = TYPE_META[e.type];
+  const m = TYPE_META[e.type] || TYPE_META.note;
   const lane = LANES.find(l => l.id === e.lane);
+  
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', alignItems: 'stretch', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', transition: 'border-color .14s', borderColor: hover ? '#3a3a45' : 'var(--border)' }}>
+      className="glass-card"
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        borderColor: hover ? `${m.color}55` : 'rgba(255, 255, 255, 0.06)',
+        boxShadow: hover ? `0 8px 24px rgba(0, 0, 0, 0.45), 0 0 12px ${m.color}22` : 'none',
+      }}>
       <div style={{ width: 3, flex: '0 0 auto', background: m.color }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', flex: 1, minWidth: 0 }}>
         <span style={{ width: 30, height: 30, flex: '0 0 auto', borderRadius: 8, background: m.color + '1c', color: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={m.glyph} size={15} /></span>
@@ -794,8 +1113,8 @@ function DigestModal({ currentUser, onClose }) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 90, animation: 'fadeIn .15s ease both' }} />
-      <div className="pop-in" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 560, maxHeight: '82%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, zIndex: 91, boxShadow: '0 30px 80px rgba(0,0,0,.6)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', zIndex: 90, animation: 'fadeIn .15s ease both' }} />
+      <div className="pop-in glass" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 560, maxHeight: '82%', borderRadius: 14, zIndex: 91, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '15px 18px', borderBottom: '1px solid var(--border-soft)' }}>
           <Icon name="sparkle" size={16} color="var(--purple)" />
           <span style={{ fontSize: 14, fontWeight: 600 }}>Weekly digest</span>
@@ -867,47 +1186,261 @@ function DigestModal({ currentUser, onClose }) {
 
 // ── Personal log screen ────────────────────────────────────────────────────
 function PersonalLogScreen({ currentUser, onRefresh }) {
-  const { ENTRIES, PEOPLE } = window.HANDOFF;
+  const { ENTRIES, PEOPLE, LANES, TYPE_META } = window.HANDOFF;
   const me = PEOPLE[currentUser];
   const [digest, setDigest] = useStatePL(false);
+  const [inboxItems, setInboxItems] = useStatePL([]);
+  const [inboxPending, setInboxPending] = useStatePL([]);
+  
+  // Multi-select state (empty arrays mean "All")
+  const [selectedLanes, setSelectedLanes] = useStatePL([]);
+  const [selectedTypes, setSelectedTypes] = useStatePL([]);
+
   const mine = ENTRIES.filter(e => e.author === currentUser)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  const refreshInbox = () => {
+    API.getInbox()
+      .then(data => setInboxItems(Array.isArray(data) ? data : []))
+      .catch(() => {});
+    API.getSlackPending()
+      .then(data => setInboxPending(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  };
+
+  useEffectPL(() => {
+    refreshInbox();
+  }, []);
+
+  const handleInboxDismiss = (id) => {
+    setInboxItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleInboxItemAdd = () => {
+    onRefresh();
+    refreshInbox();
+  };
+
+  const totalInboxCount = inboxItems.length + inboxPending.length;
+
+  const toggleLane = (laneId) => {
+    setSelectedLanes(prev => {
+      if (prev.includes(laneId)) {
+        return prev.filter(id => id !== laneId);
+      } else {
+        return [...prev, laneId];
+      }
+    });
+  };
+
+  const toggleType = (typeKey) => {
+    setSelectedTypes(prev => {
+      if (prev.includes(typeKey)) {
+        return prev.filter(k => k !== typeKey);
+      } else {
+        return [...prev, typeKey];
+      }
+    });
+  };
+
+  const clearAllFilters = () => {
+    setSelectedLanes([]);
+    setSelectedTypes([]);
+  };
+
+  const filteredMine = useMemopl(() => {
+    return mine.filter(e => {
+      const matchLane = selectedLanes.length === 0 || selectedLanes.includes(e.lane);
+      const matchType = selectedTypes.length === 0 || selectedTypes.includes(e.type);
+      return matchLane && matchType;
+    });
+  }, [mine, selectedLanes, selectedTypes]);
+
+  const groupedEntries = useMemopl(() => {
+    const today = [];
+    const thisWeek = [];
+    const earlier = [];
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    filteredMine.forEach(e => {
+      const d = new Date(e.date);
+      if (d >= startOfToday) {
+        today.push(e);
+      } else if (d >= sevenDaysAgo) {
+        thisWeek.push(e);
+      } else {
+        earlier.push(e);
+      }
+    });
+
+    return { today, thisWeek, earlier };
+  }, [filteredMine]);
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', background: 'var(--bg)' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', background: 'var(--bg)', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 22px', height: 56, borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
-        {me && <><Avatar person={me} size={30} ring />
-        <div>
-          <div style={{ fontSize: 14.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-            {me.name}
-            {me.departing && <Pill color="var(--red)">departing · last day {me.lastDay}</Pill>}
+      <div className="profile-hero" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 24px', height: 60, flex: '0 0 auto', zIndex: 100 }}>
+        {me && <>
+          <Avatar person={me} size={32} ring />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {me.name}
+              {me.departing && <Pill color="var(--red)">departing · last day {me.lastDay}</Pill>}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{me.role} · {mine.length} entries</div>
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{me.role} · {mine.length} entries</div>
-        </div></>}
+        </>}
         <div style={{ flex: 1 }} />
+        
         <button className="btn btn-primary" onClick={() => setDigest(true)}>
           <Icon name="sparkle" size={15} /> Generate weekly digest
         </button>
       </div>
 
-      {/* Feed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 0' }}>
-        <div style={{ width: 680, maxWidth: '92%', margin: '0 auto' }}>
-          {/* Inbox: git commits + Slack message suggestions */}
-          <InboxSection onRefresh={onRefresh} />
-
-          {/* Quick single-entry add */}
+      {/* Grid Layout */}
+      <div className="log-layout" style={{ flex: 1, minHeight: 0, width: '100%' }}>
+        
+        {/* Left Sidebar (Create & Add & Inbox) */}
+        <div className="log-sidebar">
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: '#888', margin: '4px 4px 8px' }}>Create & Add Data</div>
           <QuickAddBar onRefresh={onRefresh} />
-
-          {/* AI free log (paste anything) */}
           <FreeLogSection onRefresh={onRefresh} />
+          
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: '#888', margin: '16px 4px 8px', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Incoming Suggestions</span>
+            {totalInboxCount > 0 && <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{totalInboxCount} new</span>}
+          </div>
+          
+          <InboxSection
+            items={inboxItems}
+            pending={inboxPending}
+            refresh={refreshInbox}
+            onDismiss={handleInboxDismiss}
+            onRefresh={handleInboxItemAdd}
+          />
+        </div>
 
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted)', margin: '10px 2px 12px' }}>My entries</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            {mine.length === 0
-              ? <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: '8px 2px' }}>No entries yet — add one above.</div>
-              : mine.map(e => <LogCard key={e.id} e={e} />)}
+        {/* Right Main Area (My Log) */}
+        <div className="log-main">
+          {/* Filter Lanes and Event Types */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 28 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Filter Entries</div>
+              {(selectedLanes.length > 0 || selectedTypes.length > 0) && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={clearAllFilters}
+                  style={{
+                    fontSize: 12,
+                    padding: '4px 10px',
+                    color: 'var(--purple)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Icon name="close" size={13} color="var(--purple)" />
+                  Clear all filters
+                </button>
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted-2)', marginBottom: 8, fontWeight: 600 }}>Filter by Lane</div>
+              <div className="filter-tabs" style={{ marginBottom: 0 }}>
+                <button
+                  className={`filter-tab ${selectedLanes.length === 0 ? 'active' : ''}`}
+                  onClick={() => setSelectedLanes([])}
+                >
+                  All Lanes
+                </button>
+                {LANES.map(lane => {
+                  const isActive = selectedLanes.includes(lane.id);
+                  return (
+                    <button
+                      key={lane.id}
+                      className={`filter-tab ${isActive ? 'active' : ''}`}
+                      onClick={() => toggleLane(lane.id)}
+                    >
+                      {lane.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted-2)', marginBottom: 8, fontWeight: 600 }}>Filter by Event Type</div>
+              <div className="filter-tabs" style={{ marginBottom: 0 }}>
+                <button
+                  className={`filter-tab ${selectedTypes.length === 0 ? 'active' : ''}`}
+                  onClick={() => setSelectedTypes([])}
+                >
+                  All Types
+                </button>
+                {Object.entries(TYPE_META || {}).map(([typeKey, typeInfo]) => {
+                  const isActive = selectedTypes.includes(typeKey);
+                  return (
+                    <button
+                      key={typeKey}
+                      className={`filter-tab ${isActive ? 'active' : ''}`}
+                      onClick={() => toggleType(typeKey)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        borderColor: isActive ? typeInfo.color : 'rgba(255, 255, 255, 0.1)',
+                        boxShadow: isActive ? `0 4px 16px ${typeInfo.color}33` : 'none',
+                        background: isActive ? `${typeInfo.color}2b` : 'rgba(255, 255, 255, 0.06)'
+                      }}
+                    >
+                      <span style={{ color: typeInfo.color, display: 'inline-flex', alignItems: 'center' }}>
+                        <Icon name={typeInfo.glyph} size={13} />
+                      </span>
+                      <span>{typeInfo.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {groupedEntries.today.length > 0 && (
+              <div>
+                <div className="section-label" style={{ marginTop: 0 }}>Today</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {groupedEntries.today.map(e => <LogCard key={e.id} e={e} />)}
+                </div>
+              </div>
+            )}
+            
+            {groupedEntries.thisWeek.length > 0 && (
+              <div>
+                <div className="section-label" style={{ marginTop: groupedEntries.today.length ? 24 : 0 }}>This Week</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {groupedEntries.thisWeek.map(e => <LogCard key={e.id} e={e} />)}
+                </div>
+              </div>
+            )}
+
+            {groupedEntries.earlier.length > 0 && (
+              <div>
+                <div className="section-label" style={{ marginTop: (groupedEntries.today.length || groupedEntries.thisWeek.length) ? 24 : 0 }}>Earlier</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {groupedEntries.earlier.map(e => <LogCard key={e.id} e={e} />)}
+                </div>
+              </div>
+            )}
+
+            {filteredMine.length === 0 && (
+              <div style={{ fontSize: 13, color: '#888', fontStyle: 'italic', padding: '40px 10px', textAlign: 'center' }}>
+                No entries found.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -918,3 +1451,4 @@ function PersonalLogScreen({ currentUser, onRefresh }) {
 }
 
 window.PersonalLogScreen = PersonalLogScreen;
+window.InboxSection = InboxSection;

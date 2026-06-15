@@ -5,7 +5,7 @@ import hashlib
 import time
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -213,10 +213,10 @@ def create_app():
             b.context_doc = data['context_doc']
         if 'running_summary' in data:
             b.running_summary = data['running_summary']
-            b.running_summary_updated_at = datetime.utcnow()
+            b.running_summary_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if 'ai_context' in data:
             b.ai_context = data['ai_context']
-            b.ai_context_updated_at = datetime.utcnow()
+            b.ai_context_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             b.nodes_since_context_sync = 0
         db.session.commit()
         return jsonify(b.to_dict())
@@ -353,7 +353,7 @@ def create_app():
         project = Project.query.first()
         if project:
             project.nodes_since_last_link = 0
-            project.last_linked_at = datetime.utcnow()
+            project.last_linked_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.session.commit()
         for n in decisions:
             _trigger_decision_links(app, ai, n.id)
@@ -555,9 +555,9 @@ def create_app():
             text = (event.get('text') or '').strip()
             if not channel or not slack_user or not text:
                 return jsonify({'ok': True, 'ignored': True})
-            ts = datetime.utcnow()
+            ts = datetime.now(timezone.utc).replace(tzinfo=None)
             try:
-                ts = datetime.utcfromtimestamp(float(event.get('ts')))
+                ts = datetime.fromtimestamp(float(event.get('ts')), timezone.utc).replace(tzinfo=None)
             except (TypeError, ValueError):
                 pass
             m = _store_slack_message(channel, slack_user, text, ts)
@@ -570,7 +570,7 @@ def create_app():
         if not channel or not slack_user or not text:
             return jsonify({'error': 'channel, user, and text are required'}), 400
 
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc).replace(tzinfo=None)
         if payload.get('ts'):
             try:
                 ts = datetime.fromisoformat(payload['ts'])
@@ -680,7 +680,7 @@ def create_app():
             nodes,
         )
         b.ai_context = result
-        b.ai_context_updated_at = datetime.utcnow()
+        b.ai_context_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         b.nodes_since_context_sync = 0
         db.session.commit()
         return jsonify(b.to_dict())
@@ -709,7 +709,7 @@ def create_app():
         project = Project.query.first()
 
         # Nodes from past 7 days for this user
-        since = datetime.utcnow() - timedelta(days=7)
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         nodes = (Node.query
                  .filter(Node.created_by == user_id)
                  .filter(Node.created_at >= since)
@@ -836,7 +836,7 @@ def _trigger_summary_update(app, ai, branch_id):
                     nodes,
                 )
                 b.running_summary = summary
-                b.running_summary_updated_at = datetime.utcnow()
+                b.running_summary_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             except Exception as e:
                 print(f'Summary update failed for branch {branch_id}: {e}')
             finally:
