@@ -466,27 +466,112 @@ User Input
 
 ## 測試
 
-執行所有測試：
+本專案使用 **pytest** 作為測試框架，測試檔案位於 `test/` 目錄下。另外在根目錄有一支獨立的 AI 驗證腳本 `verify_ai.py`。
+
+### 測試架構
+
+```text
+HandOff/
+├── test/
+│   ├── test_slack_interpret.py   # Slack pipeline 整合測試（pytest）
+│   ├── test_auth_and_branches.py # 使用者驗證與分支/節點 CRUD 測試（pytest）
+│   └── slack_test_messages/      # 測試用 Slack 訊息 fixtures
+│       ├── messages_1.json       # 混合技術討論與閒聊的訊息
+│       └── messages_2.json       # 多人基礎設施事件討論
+└── verify_ai.py                  # AI service 驗證腳本（獨立執行）
+```
+
+### Slack Pipeline 整合測試
+
+`test/test_slack_interpret.py` 涵蓋 Slack 訊息從接收到 AI 解析的完整流程。
+
+每個測試都會建立獨立的 SQLite 暫存資料庫，透過 Flask test client 模擬 HTTP request，確保測試之間互不干擾。
+
+| 測試名稱 | 類型 | 驗證內容 |
+| --- | --- | --- |
+| `test_webhook_ingest_matches_known_user` | 單元 | Slack webhook 收到訊息後能正確存入 `SlackMessage`，並自動比對系統使用者 |
+| `test_webhook_requires_channel_user_text` | 單元 | 缺少必要欄位（channel / user / text）時回傳 400 |
+| `test_pending_groups_by_channel` | 整合 | 多筆訊息送入後，pending API 能正確依 channel 分組並回傳數量與內容 |
+| `test_interpret_with_no_pending_returns_400` | 單元 | 該 channel 無 pending 訊息時，interpret 回傳 400 |
+| `test_interpret_incident_thread_creates_suggestion` | 整合 / AI | 多人事件討論串能產生 ≥1 個 node suggestion，且訊息被標記為已處理 |
+| `test_interpret_small_talk_returns_no_nodes_and_stays_pending` | 整合 / AI | 純閒聊不應產生 node，且訊息保留 pending 狀態不被消耗 |
+| `test_interpret_mixed_signal_thread` | 整合 / AI | 混合技術決策與閒聊的訊息串中，AI 能正確抽出 decision 類型的 node |
+
+### 使用者驗證與 CRUD 測試
+
+`test/test_auth_and_branches.py` 驗證系統核心的使用者註冊、登入邏輯，以及分支與 Timeline Node 的建立與查詢流程。
+
+| 測試名稱 | 類型 | 驗證內容 |
+| --- | --- | --- |
+| `test_register_success` | 單元 | 成功註冊新使用者，並確認回傳資訊不包含密碼雜湊 |
+| `test_register_missing_fields` | 單元 | 缺少必要欄位時回傳 400 錯誤 |
+| `test_register_short_password` | 單元 | 密碼長度不足 6 位時回傳 400 錯誤 |
+| `test_login_success` | 整合 | 已註冊使用者使用正確帳密可成功登入 |
+| `test_login_invalid_credentials` | 整合 | 使用錯誤的 Email 或密碼登入時回傳 401 錯誤 |
+| `test_create_and_get_branch` | 整合 | 成功建立分支、自動轉換 slug，並能在分支列表中查詢到 |
+| `test_create_branch_missing_name` | 單元 | 建立分支缺少名稱時回傳 400 錯誤 |
+| `test_create_node_on_branch` | 整合 | 在特定分支下成功建立 Node，並能依 branch_id 查詢過濾 |
+
+### AI Service 驗證腳本
+
+`verify_ai.py` 是一支獨立執行的驗證腳本，用於確認 Gemini API 連線與 `AIService` 各方法的正確性。
+
+| 測試項目 | 驗證內容 |
+| --- | --- |
+| Model discovery | 列出可用的 Gemini flash-lite 模型 |
+| `serialize_nodes_rich` | Node 序列化包含所有欄位（hash、metric、url、body、note） |
+| `sync_context` | AI 能根據 branch nodes 產生有意義的 context 文件 |
+| `parse_log` | 自由文字能被正確拆解為多個 node（commit + link 等） |
+| `update_running_summary` | AI 能產生 branch 工作進度摘要 |
+
+### 如何執行
+
+執行所有 pytest 測試（不需 API key）：
 
 ```bash
 .venv/bin/python -m pytest -v
 ```
 
-執行 Slack pipeline 測試：
+執行結果範例：
 
-```bash
-.venv/bin/python -m pytest test/test_slack_interpret.py -v
+```text
+test/test_auth_and_branches.py::test_register_success PASSED
+test/test_auth_and_branches.py::test_register_missing_fields PASSED
+test/test_auth_and_branches.py::test_register_short_password PASSED
+test/test_auth_and_branches.py::test_login_success PASSED
+test/test_auth_and_branches.py::test_login_invalid_credentials PASSED
+test/test_auth_and_branches.py::test_create_and_get_branch PASSED
+test/test_auth_and_branches.py::test_create_branch_missing_name PASSED
+test/test_auth_and_branches.py::test_create_node_on_branch PASSED
+test/test_slack_interpret.py::test_webhook_ingest_matches_known_user PASSED
+test/test_slack_interpret.py::test_webhook_requires_channel_user_text PASSED
+test/test_slack_interpret.py::test_pending_groups_by_channel PASSED
+test/test_slack_interpret.py::test_interpret_with_no_pending_returns_400 PASSED
+test/test_slack_interpret.py::test_interpret_incident_thread_creates_suggestion SKIPPED (no API key)
+test/test_slack_interpret.py::test_interpret_small_talk_returns_no_nodes_and_stays_pending SKIPPED (no API key)
+test/test_slack_interpret.py::test_interpret_mixed_signal_thread SKIPPED (no API key)
+
+12 passed, 3 skipped
 ```
 
-目前 Slack 測試包含：
+執行 AI 驗證腳本（需要 `GEMINI_API_KEY`）：
 
-- Slack message ingest
-- required fields validation
-- pending messages grouping
-- no pending messages error
-- Gemini interpretation tests
+```bash
+.venv/bin/python verify_ai.py
+```
 
-其中 Gemini interpretation tests 需要 `GEMINI_API_KEY`。如果沒有設定，測試會自動 skipped。
+### 測試涵蓋範圍說明
+
+| 模組 | 有測試 | 說明 |
+| --- | --- | --- |
+| Slack webhook ingest | ✅ | 完整涵蓋 ingest → pending → interpret 流程 |
+| AI parse / context / summary | ✅ | 透過 `verify_ai.py` 驗證 |
+| Auth (register / login) | ✅ | 透過 `test_auth_and_branches.py` 驗證 |
+| Node / Branch CRUD | ✅ | 透過 `test_auth_and_branches.py` 驗證 |
+| GitHub webhook | ❌ | 目前僅透過 curl 手動測試 |
+| Handover report | ❌ | AI 產生結果由前端預覽確認 |
+
+> **備註：** 標記為 AI 的測試需要設定 `GEMINI_API_KEY` 環境變數。未設定時，pytest 會自動 skip 這些測試，不影響其他測試的執行。
 
 
 ## 補充文件
