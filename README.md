@@ -349,7 +349,7 @@ Subscribe to bot events: message.channels 或需要的 message event
 ```
 ## Open API Documentation
 
-本專案使用 [OpenAPI 3.0](docs/openapi.yaml) 規格文件，並整合 **Swagger UI** 提供互動式 API 瀏覽介面。
+本專案使用 [OpenAPI 3.0](docs/openapi.yaml) 規格文件，並整合了 **Swagger UI** 提供 API 的瀏覽介面。
 
 啟動伺服器後，可以直接在瀏覽器打開：
 
@@ -357,7 +357,7 @@ Subscribe to bot events: message.channels 或需要的 message event
 http://localhost:5001/api/docs/
 ```
 
-介面涵蓋所有 API endpoint（共 27 支），依功能分成以下群組：
+介面涵蓋所有 API endpoint，依功能分成以下群組：
 
 | 群組 | 說明 |
 | --- | --- |
@@ -374,7 +374,7 @@ http://localhost:5001/api/docs/
 | Activity | 最近活動摘要 |
 | AI | Gemini AI 功能 |
 
-原始 OpenAPI spec 存放在 [`docs/openapi.yaml`](docs/openapi.yaml)，也可以透過以下路徑取得：
+原始 OpenAPI spec 存放在 [`docs/openapi.yaml`](docs/openapi.yaml)，也可以透過以下 API 取得：
 
 ```text
 GET http://localhost:5001/api/openapi.yaml
